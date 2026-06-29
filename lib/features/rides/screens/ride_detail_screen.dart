@@ -1,390 +1,651 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+
+import '../../../api/api_service.dart';
 import '../../../core/constants/color_constants.dart';
 
 class RideDetailScreen extends StatefulWidget {
-  const RideDetailScreen({Key? key}) : super(key: key);
+  const RideDetailScreen({super.key});
 
   @override
-  _RideDetailScreenState createState() => _RideDetailScreenState();
+  State<RideDetailScreen> createState() => _RideDetailScreenState();
 }
 
 class _RideDetailScreenState extends State<RideDetailScreen> {
-  int _selectedSeats = 1;
-  bool _includeParcel = false;
-  final double _basePrice = 450.0;
-  final double _parcelFee = 150.0;
+  final ApiService _api = ApiService();
 
-  double get _totalPrice =>
-      (_basePrice * _selectedSeats) + (_includeParcel ? _parcelFee : 0);
+  Future<Map<String, dynamic>>? _rideFuture;
+  Map<String, dynamic>? _initialRide;
+  String _rideId = '';
+  Map<String, dynamic>? _booking;
+
+  int _selectedSeats = 1;
+  bool _agreeToPassengerSharing = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_rideFuture != null) return;
+
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is Map) {
+      final rideArg = args['ride'];
+      if (rideArg is Map) {
+        _initialRide = rideArg.cast<String, dynamic>();
+      }
+      final bookingArg = args['booking'];
+      if (bookingArg is Map) {
+        _booking = bookingArg.cast<String, dynamic>();
+      }
+      _rideId = (args['rideId'] ?? _initialRide?['_id'] ?? _initialRide?['id'] ?? '').toString();
+    }
+
+    _rideFuture = _loadRide();
+  }
+
+  Future<Map<String, dynamic>> _loadRide() async {
+    if (_rideId.isEmpty && _initialRide != null) {
+      return _initialRide!;
+    }
+
+    if (_rideId.isEmpty) {
+      throw Exception('Ride details are missing. Please search again.');
+    }
+
+    final res = await _api.getRideById(_rideId);
+    debugPrint("RIDE DETAIL PAYLOAD: ${jsonEncode(res)}");
+    if (res is Map && res['data'] is Map) {
+      return (res['data'] as Map).cast<String, dynamic>();
+    }
+    if (res is Map) return res.cast<String, dynamic>();
+    throw Exception('Invalid ride response from server');
+  }
+
+  String _fmtTime(String? iso) {
+    if (iso == null || iso.isEmpty) return 'N/A';
+    final dt = DateTime.tryParse(iso);
+    if (dt == null) return iso; // Return original if not ISO (e.g. "10:30 AM")
+    final h = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+    final m = dt.minute.toString().padLeft(2, '0');
+    final ap = dt.hour >= 12 ? 'PM' : 'AM';
+    return '$h:$m $ap';
+  }
+
+  String _fmtDate(String? iso) {
+    final dt = DateTime.tryParse(iso ?? '');
+    if (dt == null) return 'N/A';
+    final d = dt.day.toString().padLeft(2, '0');
+    final m = dt.month.toString().padLeft(2, '0');
+    return '$d-$m-${dt.year}';
+  }
+
+  void _showRatingSheet(BuildContext context, String bookingId) {
+    int _selectedRating = 5;
+    final TextEditingController _reviewCtrl = TextEditingController();
+    bool _isSubmitting = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Padding(
+          padding: EdgeInsets.only(
+            left: 24, right: 24, top: 20,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text('Rate Your Driver', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 6),
+              const Text('How was your ride experience?', style: TextStyle(color: Colors.grey)),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(5, (i) {
+                  final star = i + 1;
+                  return GestureDetector(
+                    onTap: () => setSheetState(() => _selectedRating = star),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: Icon(
+                        Icons.star_rounded,
+                        size: 40,
+                        color: star <= _selectedRating ? Colors.amber : Colors.grey.shade300,
+                      ),
+                    ),
+                  );
+                }),
+              ),
+              const SizedBox(height: 20),
+              TextField(
+                controller: _reviewCtrl,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  hintText: 'Leave a review (optional)...',
+                  filled: true,
+                  fillColor: Colors.grey.shade100,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primaryPurple,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  onPressed: _isSubmitting ? null : () async {
+                    setSheetState(() => _isSubmitting = true);
+                    try {
+                      await _api.loadToken();
+                      final res = await _api.rateDriver(
+                        bookingId,
+                        _selectedRating,
+                        review: _reviewCtrl.text.trim(),
+                      );
+                      if (!context.mounted) return;
+                      Navigator.pop(ctx);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(res is Map && res['success'] == true
+                              ? 'Thanks for rating your driver! ⭐'
+                              : (res?['message'] ?? 'Rating submitted')),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                      // Refresh booking state
+                      if (mounted) setState(() {
+                        if (_booking != null) {
+                          _booking!['ratingByPassenger'] = {'rating': _selectedRating};
+                        }
+                      });
+                    } catch (e) {
+                      setSheetState(() => _isSubmitting = false);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.red),
+                      );
+                    }
+                  },
+                  child: _isSubmitting
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Text('Submit Rating', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.backgroundDark, // Light Grey Background
-      body: Column(
-        children: [
-          // 1. Custom Header (The "Ticket Stub" look)
-          _buildHeader(context),
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _rideFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            backgroundColor: AppColors.backgroundDark,
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
 
-          // 2. Scrollable Details
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                children: [
-                  // Driver Profile Card
-                  _buildDriverCard(),
-                  const SizedBox(height: 20),
-
-                  // Trip Info Card (Time, Car, Amenities)
-                  _buildTripDetailsCard(),
-                  const SizedBox(height: 20),
-
-                  // Booking Options (Seats & Parcel)
-                  _buildBookingOptions(),
-                  const SizedBox(height: 20),
-
-                  // Price Breakdown
-                  _buildPriceSection(),
-                  const SizedBox(height: 100), // Spacing for bottom bar
-                ],
+        if (snapshot.hasError) {
+          return Scaffold(
+            backgroundColor: AppColors.backgroundDark,
+            appBar: AppBar(
+              title: const Text('Trip Details'),
+              backgroundColor: AppColors.backgroundLight,
+            ),
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Text(
+                  'Failed to load ride: ${snapshot.error}',
+                  style: const TextStyle(color: Colors.red),
+                  textAlign: TextAlign.center,
+                ),
               ),
             ),
-          ),
-        ],
-      ),
+          );
+        }
 
-      // 3. Fixed Bottom Payment Bar
-      bottomSheet: _buildBottomBar(),
-    );
-  }
+        final ride = snapshot.data ?? const <String, dynamic>{};
+        final from = (ride['from'] ?? ride['route']?['startCity'] ?? 'From').toString();
+        final to = (ride['to'] ?? ride['route']?['endCity'] ?? 'To').toString();
+        final departure = ride['departureTime']?.toString() ?? ride['travelDate']?.toString();
+        final displayTime = ride['startTime'] ?? ride['time'] ?? _fmtTime(departure);
+        final availableSeatsRaw = ride['availableSeats'] ?? ride['seats'] ?? 1;
+        final availableSeats = availableSeatsRaw is num ? availableSeatsRaw.toInt() : 1;
 
-  // --- WIDGETS ---
+        final fareRaw = ride['fare'] ?? ride['pricing']?['pricePerSeat'] ?? 0;
+        final fare = (fareRaw is num) ? fareRaw.toDouble() : double.tryParse('$fareRaw') ?? 0;
 
-  Widget _buildHeader(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.only(top: 50, left: 20, right: 20, bottom: 30),
-      decoration: const BoxDecoration(
-        color: AppColors.primaryPurple,
-        borderRadius: BorderRadius.only(
-          bottomLeft: Radius.circular(30),
-          bottomRight: Radius.circular(30),
-        ),
-      ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        final safeMaxSeats = availableSeats <= 0 ? 1 : availableSeats;
+        if (_selectedSeats > safeMaxSeats) {
+          _selectedSeats = safeMaxSeats;
+        }
+
+        final totalPrice = (fare * _selectedSeats);
+
+        return Scaffold(
+          backgroundColor: AppColors.backgroundDark,
+          body: Column(
             children: [
-              IconButton(
-                icon: const Icon(Icons.arrow_back, color: Colors.white),
-                onPressed: () => Navigator.pop(context),
-              ),
-              const Text(
-                "Trip Details",
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.share, color: Colors.white),
-                onPressed: () {},
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          // Route Visualization
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "Bhopal",
-                    style: GoogleFonts.inter(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    "08:30 AM",
-                    style: TextStyle(color: Colors.white.withOpacity(0.8)),
-                  ),
-                ],
-              ),
-              const Icon(
-                Icons.arrow_right_alt,
-                color: AppColors.primaryGold,
-                size: 30,
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    "Indore",
-                    style: GoogleFonts.inter(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    "12:30 PM",
-                    style: TextStyle(color: Colors.white.withOpacity(0.8)),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDriverCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.backgroundLight,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        children: [
-          const CircleAvatar(
-            radius: 30,
-            backgroundColor: AppColors.backgroundDark,
-            child: Icon(Icons.person, size: 30, color: AppColors.textGrey),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  "Rahul Verma",
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textDark,
+              Container(
+                padding: const EdgeInsets.only(top: 50, left: 20, right: 20, bottom: 30),
+                decoration: const BoxDecoration(
+                  color: AppColors.primaryPurple,
+                  borderRadius: BorderRadius.only(
+                    bottomLeft: Radius.circular(30),
+                    bottomRight: Radius.circular(30),
                   ),
                 ),
-                const SizedBox(height: 4),
-                Row(
-                  children: const [
-                    Icon(Icons.star, color: AppColors.primaryGold, size: 16),
-                    Text(
-                      " 4.8 (120 reviews)",
-                      style: TextStyle(color: AppColors.textGrey, fontSize: 12),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back, color: Colors.white),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                        const Text(
+                          'Trip Details',
+                          style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(width: 48),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                from,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.inter(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(displayTime, style: const TextStyle(color: Colors.white70)),
+                            ],
+                          ),
+                        ),
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+                          child: Icon(Icons.arrow_right_alt, color: AppColors.primaryGold, size: 30),
+                        ),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                to,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.right,
+                                style: GoogleFonts.inter(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(_fmtDate(departure), style: const TextStyle(color: Colors.white70)),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: AppColors.secondaryTeal.withOpacity(0.1),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.verified,
-              color: AppColors.secondaryTeal,
-              size: 20,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTripDetailsCard() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppColors.backgroundLight,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        children: [
-          _buildDetailRow(Icons.calendar_today, "Date", "Today, 24 Oct"),
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: Divider(),
-          ),
-          _buildDetailRow(
-            Icons.directions_car,
-            "Vehicle",
-            "Swift Dzire (White)",
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: Divider(),
-          ),
-          _buildDetailRow(
-            Icons.airline_seat_recline_normal,
-            "Available",
-            "3 Seats Left",
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBookingOptions() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppColors.backgroundLight,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            "Select Seats",
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: List.generate(3, (index) {
-              bool isSelected = index < _selectedSeats;
-              return GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _selectedSeats = index + 1;
-                  });
-                },
-                child: Container(
-                  margin: const EdgeInsets.only(right: 12),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? AppColors.primaryPurple
-                        : AppColors.backgroundDark,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: isSelected
-                          ? AppColors.primaryPurple
-                          : Colors.transparent,
-                    ),
-                  ),
-                  child: Text(
-                    "${index + 1}",
-                    style: TextStyle(
-                      color: isSelected ? Colors.white : AppColors.textDark,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              );
-            }),
-          ),
-          const SizedBox(height: 20),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            activeColor: AppColors.primaryPurple,
-            title: const Text(
-              "Add Parcel Space?",
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            subtitle: Text("+₹$_parcelFee for extra luggage space"),
-            value: _includeParcel,
-            onChanged: (val) {
-              setState(() {
-                _includeParcel = val;
-              });
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPriceSection() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppColors.backgroundLight,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        children: [
-          _buildPriceRow(
-            "Seat Price (x$_selectedSeats)",
-            "₹${_basePrice * _selectedSeats}",
-          ),
-          if (_includeParcel) ...[
-            const SizedBox(height: 8),
-            _buildPriceRow("Parcel Fee", "₹$_parcelFee"),
-          ],
-          const Divider(height: 24),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                "Total Amount",
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
               ),
-              Text(
-                "₹$_totalPrice",
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 24,
-                  color: AppColors.primaryPurple,
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: AppColors.backgroundLight,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Column(
+                          children: [
+                            (() {
+                              final d = ride['driverId'];
+                              Map? uObj;
+                              if (d is Map) {
+                                if (d['userId'] is Map) uObj = d['userId'];
+                                else if (d['user'] is Map) uObj = d['user'];
+                                else uObj = d;
+                              } else {
+                                if (ride['userId'] is Map) uObj = ride['userId'];
+                                else if (ride['user'] is Map) uObj = ride['user'];
+                                else if (ride['driver'] is Map) uObj = ride['driver'];
+                              }
+                              
+                              String dName = 'Driver';
+                              if (uObj != null) {
+                                final fn = uObj['fullname']?.toString() ?? uObj['name']?.toString() ?? uObj['fullName']?.toString() ?? uObj['displayName']?.toString();
+                                if (fn != null && fn.trim().isNotEmpty) {
+                                  dName = fn.trim();
+                                } else {
+                                  final firstName = uObj['first_name']?.toString() ?? uObj['firstName']?.toString() ?? '';
+                                  final lastName = uObj['last_name']?.toString() ?? uObj['lastName']?.toString() ?? '';
+                                  if (firstName.isNotEmpty || lastName.isNotEmpty) {
+                                    dName = '$firstName $lastName'.trim();
+                                  } else {
+                                    final alt = uObj['username']?.toString() ?? uObj['email']?.toString();
+                                    if (alt != null && alt.trim().isNotEmpty) dName = alt.trim();
+                                  }
+                                }
+                              }
+
+                              final v = (d is Map && d['vehicle'] is Map) ? d['vehicle'] : (ride['vehicle'] is Map ? ride['vehicle'] : {});
+                              final vName = (v['model'] ?? v['brand'] ?? v['vehicleNumber'] ?? v['plateNumber'] ?? '').toString();
+                              
+                              return _buildDetailRow(
+                                Icons.person, 
+                                'Driver', 
+                                vName.isNotEmpty ? '$dName ($vName)' : dName
+                              );
+                            })(),
+                            const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider()),
+                            _buildDetailRow(Icons.calendar_today, 'Departure', _fmtDate(departure)),
+                            const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider()),
+                            _buildDetailRow(Icons.access_time, 'Time', displayTime),
+                            const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider()),
+                            _buildDetailRow(Icons.airline_seat_recline_normal, 'Available', '$availableSeats seats left'),
+                            const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider()),
+                            _buildDetailRow(Icons.currency_rupee, 'Fare / Seat', '₹$fare'),
+                          ],
+                        ),
+                      ),
+                      if (_booking != null) ...[
+                        const SizedBox(height: 20),
+                        Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: AppColors.backgroundLight,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('My Booking', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                              const SizedBox(height: 16),
+                              _buildDetailRow(Icons.info_outline, 'Status', (_booking!['status'] ?? 'UNKNOWN').toString()),
+                              const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider()),
+                              _buildDetailRow(Icons.event_seat, 'Seats Booked', (_booking!['seatsBooked'] ?? 1).toString()),
+                              const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider()),
+                              _buildDetailRow(Icons.payment, 'Payment Status', (_booking!['paymentStatus'] ?? 'UNKNOWN').toString()),
+                              const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider()),
+                              _buildDetailRow(Icons.payments_outlined, 'Total Paid', '₹${(_booking!['totalAmount'] ?? _booking!['totalFare'] ?? (_booking!['fareBreakdown'] is Map ? _booking!['fareBreakdown']['subtotal'] : null) ?? 0)}'),
+
+                              // RATING SECTION — only show if COMPLETED and not yet rated
+                              if ((_booking!['status'] ?? '') == 'COMPLETED') ...[
+                                const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider()),
+                                if (_booking!['ratingByPassenger'] != null)
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.star_rounded, color: Colors.amber, size: 20),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'You rated: ${(_booking!['ratingByPassenger']['rating'] ?? 0)}/5',
+                                        style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.green),
+                                      ),
+                                    ],
+                                  )
+                                else
+                                  GestureDetector(
+                                    onTap: () => _showRatingSheet(context, _booking!['_id']?.toString() ?? ''),
+                                    child: Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.symmetric(vertical: 12),
+                                      decoration: BoxDecoration(
+                                        color: Colors.amber.shade50,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(color: Colors.amber.shade200),
+                                      ),
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          Icon(Icons.star_border_rounded, color: Colors.amber.shade700),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            'Rate Your Driver',
+                                            style: TextStyle(color: Colors.amber.shade800, fontWeight: FontWeight.bold),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ] else ...[
+                        const SizedBox(height: 20),
+                        Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: AppColors.backgroundLight,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Select Seats', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                              const SizedBox(height: 12),
+                              Wrap(
+                                spacing: 12,
+                                children: List.generate(safeMaxSeats, (index) {
+                                  final seat = index + 1;
+                                  final selected = seat == _selectedSeats;
+                                  return ChoiceChip(
+                                    label: Text('$seat'),
+                                    selected: selected,
+                                    onSelected: (_) => setState(() => _selectedSeats = seat),
+                                  );
+                                }),
+                              ),
+                              const SizedBox(height: 14),
+
+                              const Divider(height: 24),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text('Total Amount', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                                  Text(
+                                    '₹${totalPrice.toStringAsFixed(0)}',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 24,
+                                      color: AppColors.primaryPurple,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 100),
+                    ],
+                  ),
                 ),
               ),
             ],
           ),
-        ],
-      ),
-    );
-  }
+          bottomSheet: _booking != null 
+            ? Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: AppColors.backgroundLight,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, -4),
+                    ),
+                  ],
+                ),
+                child: SafeArea(
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: (() {
+                      final bStatus = (_booking!['status'] ?? '').toString().toUpperCase();
+                      final alreadyRated = _booking!['ratingByPassenger'] != null;
 
-  Widget _buildBottomBar() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppColors.backgroundLight,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, -4),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        child: SizedBox(
-          width: double.infinity,
-          height: 56,
-          child: ElevatedButton(
-            onPressed: () {
-              Navigator.pushNamed(context, '/payment');
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primaryPurple,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+                      if (bStatus == 'COMPLETED' && !alreadyRated) {
+                        return ElevatedButton.icon(
+                          icon: const Icon(Icons.star_rounded, color: Colors.white),
+                          label: const Text('Rate Your Driver', style: TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.amber.shade600,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          ),
+                          onPressed: () => _showRatingSheet(context, _booking!['_id']?.toString() ?? ''),
+                        );
+                      } else if (bStatus == 'COMPLETED' && alreadyRated) {
+                        return ElevatedButton.icon(
+                          icon: const Icon(Icons.check_circle, color: Colors.white),
+                          label: const Text('Ride Completed', style: TextStyle(fontSize: 16, color: Colors.white)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          ),
+                          onPressed: null,
+                        );
+                      } else {
+                        return ElevatedButton(
+                          onPressed: () {
+                            Navigator.pushNamed(
+                              context,
+                              '/track_ride',
+                              arguments: {
+                                'ride': ride,
+                                'booking': _booking,
+                              },
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primaryPurple,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          ),
+                          child: const Text('Track Trip', style: TextStyle(fontSize: 18, color: Colors.white, fontWeight: FontWeight.bold)),
+                        );
+                      }
+                    })(),
+                  ),
+                ),
+              )
+            : Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+            decoration: BoxDecoration(
+              color: AppColors.backgroundLight,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, -4),
+                ),
+              ],
+            ),
+            child: SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Checkbox(
+                        value: _agreeToPassengerSharing,
+                        onChanged: (val) {
+                          setState(() {
+                            _agreeToPassengerSharing = val ?? false;
+                          });
+                        },
+                        activeColor: AppColors.primaryPurple,
+                      ),
+                      const Expanded(
+                        child: Text(
+                          "This is a ride sharing but not a taxi service.",
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: AppColors.textDark,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: ElevatedButton(
+                      onPressed: !_agreeToPassengerSharing
+                          ? null
+                          : () {
+                              Navigator.pushNamed(
+                                context,
+                                '/payment',
+                                arguments: {
+                                  'ride': ride,
+                                  'rideId': (_rideId.isNotEmpty ? _rideId : (ride['_id'] ?? ride['id'] ?? '').toString()),
+                                  'seatsRequired': _selectedSeats,
+                                  'amount': totalPrice.toInt(),
+                                },
+                              );
+                            },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: !_agreeToPassengerSharing ? Colors.grey : AppColors.primaryPurple,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                      child: const Text(
+                        'Proceed to Pay',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            child: const Text(
-              "Proceed to Pay",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -396,29 +657,10 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              title,
-              style: const TextStyle(fontSize: 12, color: AppColors.textGrey),
-            ),
-            Text(
-              value,
-              style: const TextStyle(
-                fontWeight: FontWeight.w600,
-                color: AppColors.textDark,
-              ),
-            ),
+            Text(title, style: const TextStyle(fontSize: 12, color: AppColors.textGrey)),
+            Text(value, style: const TextStyle(fontWeight: FontWeight.w600, color: AppColors.textDark)),
           ],
         ),
-      ],
-    );
-  }
-
-  Widget _buildPriceRow(String label, String price) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label, style: const TextStyle(color: AppColors.textGrey)),
-        Text(price, style: const TextStyle(fontWeight: FontWeight.w600)),
       ],
     );
   }

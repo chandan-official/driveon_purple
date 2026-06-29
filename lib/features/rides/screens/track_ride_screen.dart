@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'dart:async'; // Required for Timer
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:share_plus/share_plus.dart';
+import '../../../api/api_service.dart';
 import '../../../core/constants/color_constants.dart';
+import '../../common/screens/chat_screen.dart';
 
 class TrackRideScreen extends StatefulWidget {
   const TrackRideScreen({super.key});
@@ -10,11 +15,119 @@ class TrackRideScreen extends StatefulWidget {
 }
 
 class _TrackRideScreenState extends State<TrackRideScreen> {
+  final ApiService _api = ApiService();
   // 0=Accepted, 1=Arriving, 2=On Trip, 3=Trip Completed
   int _currentStep = 1;
-  bool _hasParcel = false;
+  Map<String, dynamic>? _rideData;
+  String _driverName = "Loading driver...";
+  String _driverPhone = "";
+  String _vehicleInfo = "Vehicle info not available";
+  bool _isFetching = false;
+  String? _rideId;
+  String? _bookingId;
 
-  // 1. SOS / Emergency Logic
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is Map) {
+      final r = args['ride'] as Map<String, dynamic>?;
+      final b = args['booking'] as Map<String, dynamic>?;
+      _rideData = (b != null && b['rideId'] is Map) 
+          ? (b['rideId'] as Map<String, dynamic>) 
+          : r;
+      
+      _rideId = (args['rideId'] ?? 
+                 (r != null ? (r['_id'] ?? r['id']) : null) ?? 
+                 (b != null ? (b['rideId'] is String ? b['rideId'] : (b['rideId'] is Map ? (b['rideId']['_id'] ?? b['rideId']['id']) : null)) : null)
+                )?.toString();
+
+      _bookingId = b?['_id']?.toString() ?? args['bookingId']?.toString();
+
+      if (b != null && b['rideId'] is Map) {
+        final rideObj = b['rideId'] as Map;
+        final driverObj = rideObj['driverId'];
+        if (driverObj is Map) {
+          final userObj = driverObj['userId'];
+          if (userObj is Map) {
+            final name = (userObj['fullname'] ?? userObj['name'])?.toString();
+            if (name != null && name.isNotEmpty) {
+              _driverName = name;
+            }
+            final phone = (userObj['phone'] ?? userObj['mobile'])?.toString();
+            if (phone != null && phone.isNotEmpty) {
+              _driverPhone = phone;
+            }
+          }
+        }
+      }
+
+      if (_rideData != null) {
+        _updateLocalData(_rideData!);
+      }
+
+      if (_rideId != null && (_driverName == 'Loading driver...' || _driverName.isEmpty)) {
+        _refreshRideData();
+      }
+    }
+  }
+
+  void _updateLocalData(Map<String, dynamic> ride) {
+    setState(() {
+      final driver = ride['driverId'] is Map 
+          ? ride['driverId'] 
+          : (ride['driver'] is Map ? ride['driver'] : null);
+
+      if (driver is Map) {
+        final userObj = driver['userId'] is Map 
+            ? driver['userId'] 
+            : (driver['user'] is Map ? driver['user'] : null);
+        if (userObj != null) {
+          _driverName = (userObj['fullname'] ?? userObj['name'] ?? _driverName).toString();
+          _driverPhone = (userObj['phone'] ?? userObj['mobile'] ?? _driverPhone).toString();
+        } else {
+          final directName = driver['fullname'] ?? driver['name'];
+          if (directName != null) _driverName = directName.toString();
+          final directPhone = driver['phone'] ?? driver['mobile'];
+          if (directPhone != null) _driverPhone = directPhone.toString();
+        }
+      }
+
+      final vehicle = ride['vehicle'] is Map 
+          ? ride['vehicle'] 
+          : (ride['vehicleId'] is Map 
+             ? ride['vehicleId'] 
+             : (driver is Map && driver['vehicle'] is Map ? driver['vehicle'] : null));
+          
+      if (vehicle is Map) {
+        _vehicleInfo = "${vehicle['model'] ?? 'Car'} • ${vehicle['plateNumber'] ?? vehicle['regNo'] ?? vehicle['vehicleNumber'] ?? 'N/A'}";
+      }
+    });
+  }
+
+  Future<void> _refreshRideData() async {
+    if (_rideId == null || _isFetching) return;
+    setState(() => _isFetching = true);
+    try {
+      await _api.loadToken();
+      final res = await _api.getRideById(_rideId!);
+      Map<String, dynamic>? freshRide;
+      if (res is Map && res['data'] is Map) {
+        freshRide = (res['data'] as Map).cast<String, dynamic>();
+      } else if (res is Map) {
+        freshRide = res.cast<String, dynamic>();
+      }
+      
+      if (freshRide != null && mounted) {
+        _updateLocalData(freshRide);
+      }
+    } catch (e) {
+      debugPrint("Fail-safe fetch failed: $e");
+    } finally {
+      if (mounted) setState(() => _isFetching = false);
+    }
+  }
+
   void _triggerSOS() {
     showDialog(
       context: context,
@@ -26,19 +139,10 @@ class _TrackRideScreenState extends State<TrackRideScreen> {
             children: [
               Icon(Icons.warning_amber_rounded, color: Colors.red, size: 30),
               SizedBox(width: 10),
-              Text(
-                "EMERGENCY SOS",
-                style: TextStyle(
-                  color: Colors.red,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              Text("EMERGENCY SOS", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
             ],
           ),
-          content: const Text(
-            "Sending alert to Admin & Emergency Contacts with your live location in 3 seconds...",
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
+          content: const Text("Sending alert to Admin & Emergency Contacts with your live location in 3 seconds...", style: TextStyle(fontWeight: FontWeight.bold)),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
@@ -48,18 +152,9 @@ class _TrackRideScreenState extends State<TrackRideScreen> {
               style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
               onPressed: () {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text("SOS ALERT SENT! Help is on the way."),
-                    backgroundColor: Colors.red,
-                    duration: Duration(seconds: 5),
-                  ),
-                );
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("SOS ALERT SENT! Help is on the way."), backgroundColor: Colors.red));
               },
-              child: const Text(
-                "SEND NOW",
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
+              child: const Text("SEND NOW", style: TextStyle(fontWeight: FontWeight.bold)),
             ),
           ],
         );
@@ -67,80 +162,34 @@ class _TrackRideScreenState extends State<TrackRideScreen> {
     );
   }
 
-  // 2. View Driver Profile (FIXED: Overflow Issue)
   void _showDriverProfile() {
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true, // Needed for dynamic height content
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
-        ),
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
         child: Container(
           padding: const EdgeInsets.all(24),
-          // FIXED: Removed fixed height (height: 500)
           child: SingleChildScrollView(
-            // FIXED: Added ScrollView to prevent overflow on small screens
             child: Column(
-              mainAxisSize: MainAxisSize.min, // FIXED: Wraps content height
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
+                Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
                 const SizedBox(height: 20),
-
-                // Header
                 Row(
                   children: [
-                    const CircleAvatar(
-                      radius: 40,
-                      backgroundColor: AppColors.backgroundDark,
-                      child: Icon(
-                        Icons.person,
-                        size: 50,
-                        color: AppColors.textDark,
-                      ),
-                    ),
+                    const CircleAvatar(radius: 40, backgroundColor: AppColors.backgroundDark, child: Icon(Icons.person, size: 50, color: AppColors.textDark)),
                     const SizedBox(width: 20),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          "Rahul Verma",
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                        Text(_driverName, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
                         Row(
                           children: [
-                            const Icon(
-                              Icons.star,
-                              size: 18,
-                              color: Colors.amber,
-                            ),
-                            Text(
-                              " 4.8 ",
-                              style: TextStyle(
-                                color: Colors.grey.shade800,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            Text(
-                              "(124 rides)",
-                              style: TextStyle(color: Colors.grey.shade600),
-                            ),
+                            const Icon(Icons.star, size: 18, color: Colors.amber),
+                            Text(" 4.8 ", style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.bold)),
                           ],
                         ),
                       ],
@@ -148,85 +197,14 @@ class _TrackRideScreenState extends State<TrackRideScreen> {
                   ],
                 ),
                 const SizedBox(height: 30),
-
-                // Verification Badges
-                const Text(
-                  "Verification Status",
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-                const SizedBox(height: 15),
-                Row(
-                  children: [
-                    _verificationBadge("KYC Verified", true),
-                    const SizedBox(width: 15),
-                    _verificationBadge("License Verified", true),
-                  ],
-                ),
+                _infoRow(Icons.directions_car, "Vehicle Details", _vehicleInfo),
+                _infoRow(Icons.phone, "Phone", _driverPhone),
                 const SizedBox(height: 30),
-
-                // Vehicle Details
-                const Text(
-                  "Vehicle Details",
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-                const SizedBox(height: 10),
-                _infoRow(
-                  Icons.directions_car,
-                  "Model",
-                  "Toyota Innova (White)",
-                ),
-                _infoRow(
-                  Icons.confirmation_number,
-                  "Plate Number",
-                  "KA 01 MX 1234",
-                ),
-                _infoRow(Icons.badge, "Driving License", "DL-1420110012345"),
-
-                // FIXED: Replaced Spacer() with SizedBox because Spacer requires fixed height
-                const SizedBox(height: 30),
-
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text("Close Profile"),
-                  ),
-                ),
+                SizedBox(width: double.infinity, child: OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text("Close Profile"))),
               ],
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _verificationBadge(String text, bool isVerified) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: isVerified ? Colors.green.shade50 : Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isVerified ? Colors.green.shade200 : Colors.grey.shade300,
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            isVerified ? Icons.check_circle : Icons.cancel,
-            size: 16,
-            color: isVerified ? Colors.green : Colors.grey,
-          ),
-          const SizedBox(width: 5),
-          Text(
-            text,
-            style: TextStyle(
-              color: isVerified ? Colors.green.shade700 : Colors.grey.shade700,
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -241,10 +219,7 @@ class _TrackRideScreenState extends State<TrackRideScreen> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                label,
-                style: const TextStyle(fontSize: 10, color: Colors.grey),
-              ),
+              Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey)),
               Text(value, style: const TextStyle(fontWeight: FontWeight.w500)),
             ],
           ),
@@ -253,116 +228,11 @@ class _TrackRideScreenState extends State<TrackRideScreen> {
     );
   }
 
-  // ... (Helper Functions: _showCancelDialog, _rescheduleRide, _addParcelToBooking, _shareRideDetails) ...
-  void _showCancelDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text(
-          "Cancel Ride?",
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        content: const Text("Are you sure? Penalty may apply."),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Back"),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.pushNamedAndRemoveUntil(
-                context,
-                '/home',
-                (route) => false,
-              );
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(const SnackBar(content: Text("Ride Cancelled.")));
-            },
-            child: const Text("Confirm Cancel"),
-          ),
-        ],
-      ),
-    );
-  }
 
-  void _rescheduleRide() {
-    showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 30)),
-    );
-  }
 
-  void _addParcelToBooking() {
-    setState(() => _hasParcel = true);
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text("Parcel Added!")));
-  }
-
-  void _shareRideDetails() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(24),
-        height: 250,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              "Share Ride Details",
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-            ),
-            const SizedBox(height: 10),
-            const Text(
-              "Send current location and ETA to your contacts.",
-              style: TextStyle(color: Colors.grey, fontSize: 12),
-            ),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _shareOption(Icons.message, "SMS", Colors.blue),
-                _shareOption(Icons.chat, "WhatsApp", Colors.green),
-                _shareOption(Icons.copy, "Copy Link", Colors.orange),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _shareOption(IconData icon, String label, Color color) {
-    return GestureDetector(
-      onTap: () {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Shared via $label")));
-      },
-      child: Column(
-        children: [
-          CircleAvatar(
-            radius: 30,
-            backgroundColor: color.withOpacity(0.1),
-            child: Icon(icon, color: color, size: 28),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            label,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-          ),
-        ],
-      ),
-    );
+  void _shareRideDetails() async {
+    final link = 'https://drivenon.app/track/$_rideId';
+    await SharePlus.instance.share(ShareParams(text: 'Track my ride live on DrivenOn: $link'));
   }
 
   @override
@@ -372,149 +242,34 @@ class _TrackRideScreenState extends State<TrackRideScreen> {
         title: const Text("Track Ride"),
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () => Navigator.pop(context),
-        ),
-        actions: [
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert, color: Colors.black),
-            onSelected: (value) {
-              if (value == 'cancel') _showCancelDialog();
-              if (value == 'reschedule') _rescheduleRide();
-              if (value == 'add_parcel') _addParcelToBooking();
-            },
-            itemBuilder: (BuildContext context) {
-              return [
-                const PopupMenuItem(
-                  value: 'reschedule',
-                  child: Text("Reschedule Ride"),
-                ),
-                const PopupMenuItem(
-                  value: 'add_parcel',
-                  child: Text("Add Parcel"),
-                ),
-                const PopupMenuItem(
-                  value: 'cancel',
-                  child: Text(
-                    "Cancel Ride",
-                    style: TextStyle(color: Colors.red),
-                  ),
-                ),
-              ];
-            },
-          ),
-        ],
+        leading: IconButton(icon: const Icon(Icons.arrow_back, color: Colors.black), onPressed: () => Navigator.pop(context)),
       ),
       extendBodyBehindAppBar: true,
-
-      // REMOVED FAB: SOS Button is now in the Stack below
       body: Stack(
         children: [
-          // 1. Map Background
-          Container(
-            color: Colors.grey.shade200,
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.map, size: 80, color: Colors.blue.shade200),
-                  const SizedBox(height: 10),
-                  const Text(
-                    "Live Map View",
-                    style: TextStyle(
-                      color: Colors.grey,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 40),
-                  ElevatedButton(
-                    onPressed: () => setState(() {
-                      if (_currentStep < 3) _currentStep++;
-                    }),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.black87,
-                    ),
-                    child: Text("Simulate Trip (Stage $_currentStep)"),
-                  ),
-                ],
+          SizedBox(
+            height: MediaQuery.of(context).size.height,
+            width: MediaQuery.of(context).size.width,
+            child: GoogleMap(
+              initialCameraPosition: const CameraPosition(target: LatLng(26.8627, 75.0392), zoom: 12),
+              myLocationEnabled: true,
+              zoomControlsEnabled: false,
+              compassEnabled: false,
+              mapToolbarEnabled: false,
+            ),
+          ),
+          Positioned(
+            top: 100,
+            right: 20,
+            child: GestureDetector(
+              onTap: _triggerSOS,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(30), boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 8, offset: Offset(0, 4))]),
+                child: const Row(children: [Icon(Icons.warning_amber_rounded, color: Colors.white, size: 20), SizedBox(width: 8), Text("SOS", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))]),
               ),
             ),
           ),
-
-          // 2. FIXED: SOS Button (Positioned Top Right on Map - No Overlap)
-          if (_currentStep < 3)
-            Positioned(
-              top: 100,
-              right: 20,
-              child: GestureDetector(
-                onTap: _triggerSOS,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.red,
-                    borderRadius: BorderRadius.circular(30),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black26,
-                        blurRadius: 8,
-                        offset: Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(
-                        Icons.warning_amber_rounded,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                      SizedBox(width: 8),
-                      Text(
-                        "SOS",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-
-          // 3. ETA Banner
-          if (_currentStep < 3)
-            Positioned(
-              top: 100,
-              left: 20, // Moved left to avoid SOS button collision
-              right: 120, // Give space for SOS button
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryPurple,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      "5 mins away",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Icon(Icons.access_time, color: Colors.white, size: 16),
-                  ],
-                ),
-              ),
-            ),
-
-          // 4. Bottom Panel
           Positioned(
             bottom: 0,
             left: 0,
@@ -545,25 +300,29 @@ class _TrackRideScreenState extends State<TrackRideScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Row(
-                                  children: [
-                                    const Text(
-                                      "Rahul Verma",
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 18,
+                                  Row(
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          _driverName,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 18,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(width: 5),
-                                    Icon(
-                                      Icons.verified,
-                                      size: 16,
-                                      color: Colors.blue.shade600,
-                                    ),
-                                  ],
-                                ),
+                                      const SizedBox(width: 5),
+                                      Icon(
+                                        Icons.verified,
+                                        size: 16,
+                                        color: Colors.blue.shade600,
+                                      ),
+                                    ],
+                                  ),
                                 Text(
-                                  "Toyota Innova • KA 01 MX 1234",
+                                  _vehicleInfo,
                                   style: TextStyle(
                                     color: Colors.grey.shade600,
                                     fontSize: 12,
@@ -581,8 +340,24 @@ class _TrackRideScreenState extends State<TrackRideScreen> {
                                 color: AppColors.primaryPurple,
                                 size: 20,
                               ),
-                              onPressed: () =>
-                                  Navigator.pushNamed(context, '/chat'),
+                              onPressed: () {
+                                if (_bookingId != null && _bookingId!.isNotEmpty) {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => ChatScreen(
+                                        bookingId: _bookingId!,
+                                        otherPersonName: _driverName,
+                                        otherPersonRole: "Driver",
+                                      ),
+                                    ),
+                                  );
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text("Chat not available for this booking.")),
+                                  );
+                                }
+                              },
                             ),
                           ),
                           const SizedBox(width: 10),
@@ -594,7 +369,21 @@ class _TrackRideScreenState extends State<TrackRideScreen> {
                                 color: Colors.green,
                                 size: 20,
                               ),
-                              onPressed: () {},
+                              onPressed: () async {
+                                if (_driverPhone.isNotEmpty) {
+                                  final Uri launchUri = Uri(
+                                    scheme: 'tel',
+                                    path: _driverPhone,
+                                  );
+                                  if (await canLaunchUrl(launchUri)) {
+                                    await launchUrl(launchUri);
+                                  } else {
+                                    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Could not launch phone dialer")));
+                                  }
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Driver phone number not available")));
+                                }
+                              },
                             ),
                           ),
                         ],

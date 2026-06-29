@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/constants/color_constants.dart';
 import '../widgets/horizontal_calendar.dart';
-import '../widgets/custom_time_picker.dart';
+import '../../common/screens/place_picker_field.dart';
 
 class SearchRideScreen extends StatefulWidget {
   const SearchRideScreen({Key? key}) : super(key: key);
@@ -15,9 +15,39 @@ class _SearchRideScreenState extends State<SearchRideScreen> {
   final TextEditingController _sourceController = TextEditingController();
   final TextEditingController _destController = TextEditingController();
 
+  String _fromAddress = "";
+  String _toAddress = "";
+  double? _fromLat, _fromLng, _toLat, _toLng;
+
   int _passengerCount = 1;
   DateTime _selectedDate = DateTime.now();
   TimeOfDay _selectedTime = TimeOfDay.now();
+
+  void _searchRides() {
+    final from = _fromAddress.isNotEmpty ? _fromAddress : _sourceController.text.trim();
+    final to = _toAddress.isNotEmpty ? _toAddress : _destController.text.trim();
+    if (from.isEmpty || to.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter both source and destination.')),
+      );
+      return;
+    }
+
+    Navigator.pushNamed(
+      context,
+      '/ride_results',
+      arguments: {
+        'from': from,
+        'to': to,
+        'date': DateTime(
+          _selectedDate.year,
+          _selectedDate.month,
+          _selectedDate.day,
+        ).toIso8601String(),
+        'seats': _passengerCount,
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -38,17 +68,29 @@ class _SearchRideScreenState extends State<SearchRideScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 1. Route Inputs (Clean & Modern)
-            _buildLocationInput(
-              controller: _sourceController,
-              hint: "Leaving from...",
+            // 1. Route Inputs — Google Places Autocomplete
+            PlacePickerField(
+              hintText: "Leaving from...",
               icon: Icons.my_location,
+              iconColor: AppColors.primaryPurple,
+              onPicked: (place) {
+                setState(() {
+                  _fromAddress = place.address;
+                  _sourceController.text = place.address;
+                });
+              },
             ),
             const SizedBox(height: 16),
-            _buildLocationInput(
-              controller: _destController,
-              hint: "Going to...",
+            PlacePickerField(
+              hintText: "Going to...",
               icon: Icons.location_on,
+              iconColor: AppColors.primaryPurple,
+              onPicked: (place) {
+                setState(() {
+                  _toAddress = place.address;
+                  _destController.text = place.address;
+                });
+              },
             ),
 
             const SizedBox(height: 32),
@@ -133,10 +175,7 @@ class _SearchRideScreenState extends State<SearchRideScreen> {
                   ],
                 ),
                 child: ElevatedButton(
-                  onPressed: () {
-                    // Navigate to Results
-                    Navigator.pushNamed(context, '/ride_results');
-                  },
+                  onPressed: _searchRides,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.transparent,
                     shadowColor: Colors.transparent,

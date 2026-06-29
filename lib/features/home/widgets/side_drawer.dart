@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/constants/color_constants.dart';
+import '../../../api/api_service.dart';
 
 class SideDrawer extends StatefulWidget {
   const SideDrawer({super.key});
@@ -11,6 +13,24 @@ class SideDrawer extends StatefulWidget {
 class _SideDrawerState extends State<SideDrawer> {
   // SIMULATION: Set to FALSE so you can test the "Registration Screen"
   bool isRegisteredDriver = false;
+
+  final ApiService _api = ApiService();
+  Future<Map<String, dynamic>?>? _profileFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _profileFuture = _loadProfile();
+  }
+
+  Future<Map<String, dynamic>?> _loadProfile() async {
+    await _api.loadToken();
+    final res = await _api.getUserProfile();
+    if (res is Map && res['data'] is Map) {
+      return res['data'] as Map<String, dynamic>;
+    }
+    return null;
+  }
 
   // Helper to check if we are currently on the Driver Screen
   bool _isDriverMode(BuildContext context) {
@@ -27,34 +47,43 @@ class _SideDrawerState extends State<SideDrawer> {
         padding: EdgeInsets.zero,
         children: [
           // 1. User Profile Header (Clickable -> Profile)
-          UserAccountsDrawerHeader(
-            decoration: BoxDecoration(
-              // Change header color based on mode
-              color: isCurrentlyDriver
-                  ? Colors.black87
-                  : AppColors.primaryPurple,
-            ),
-            accountName: const Text(
-              "John Doe",
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            accountEmail: const Text("+91 98765 43210"),
-            currentAccountPicture: GestureDetector(
-              onTap: () {
-                Navigator.pop(context); // Close drawer
-                Navigator.pushNamed(context, '/profile');
-              },
-              child: CircleAvatar(
-                backgroundColor: AppColors.backgroundLight,
-                child: Icon(
-                  Icons.person,
-                  size: 40,
+          FutureBuilder<Map<String, dynamic>?>(
+            future: _profileFuture,
+            builder: (context, snapshot) {
+              final name = snapshot.data?['fullname']?.toString() ?? 'User';
+              final phone = snapshot.data?['phone']?.toString() ?? 'Not provided';
+              return UserAccountsDrawerHeader(
+                decoration: BoxDecoration(
+                  // Change header color based on mode
                   color: isCurrentlyDriver
                       ? Colors.black87
                       : AppColors.primaryPurple,
                 ),
-              ),
-            ),
+                accountName: Text(
+                  name,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                accountEmail: Text(phone),
+                currentAccountPicture: GestureDetector(
+                  onTap: () {
+                    Navigator.pop(context); // Close drawer
+                    Navigator.pushNamed(context, '/profile');
+                  },
+                  child: CircleAvatar(
+                    backgroundColor: AppColors.backgroundLight,
+                    child: Text(
+                      name.isNotEmpty ? name[0].toUpperCase() : 'U',
+                      style: TextStyle(
+                        fontSize: 24,
+                        color: isCurrentlyDriver
+                            ? Colors.black87
+                            : AppColors.primaryPurple,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }
           ),
 
           // 2. Role Switcher
@@ -86,7 +115,7 @@ class _SideDrawerState extends State<SideDrawer> {
                       Text(
                         isCurrentlyDriver
                             ? "Book a ride"
-                            : "Earn money driving",
+                            : "",
                         style: const TextStyle(
                           fontSize: 10,
                           color: AppColors.textGrey,
@@ -99,25 +128,28 @@ class _SideDrawerState extends State<SideDrawer> {
                 Switch(
                   value: isCurrentlyDriver,
                   activeColor: AppColors.primaryGold,
-                  onChanged: (val) {
+                  onChanged: (val) async {
                     Navigator.pop(context); // Close drawer first
+                    final prefs = await SharedPreferences.getInstance();
 
                     if (isCurrentlyDriver) {
                       // SWITCH BACK TO RIDER
-                      Navigator.pushReplacementNamed(context, '/home');
+                      await prefs.setString('user_mode', 'rider');
+                      if (context.mounted) Navigator.pushReplacementNamed(context, '/home');
                     } else {
                       // TRYING TO SWITCH TO DRIVER
                       if (isRegisteredDriver) {
                         // Success: Go to Driver Dashboard
-                        Navigator.pushReplacementNamed(context, '/driver_home');
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text("Welcome back, Driver!"),
-                          ),
-                        );
+                        await prefs.setString('user_mode', 'driver');
+                        if (context.mounted) {
+                          Navigator.pushReplacementNamed(context, '/driver_home');
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text("Welcome back, Driver!")),
+                          );
+                        }
                       } else {
                         // Fail: Needs Registration -> Navigate to Form
-                        Navigator.pushNamed(context, '/driver_registration');
+                        if (context.mounted) Navigator.pushNamed(context, '/driver_registration');
                       }
                     }
                   },
@@ -133,6 +165,10 @@ class _SideDrawerState extends State<SideDrawer> {
             _drawerItem(Icons.dashboard, "Dashboard", () {
               Navigator.pop(context);
             }),
+            _drawerItem(Icons.account_balance_wallet, "Wallet", () {
+              Navigator.pop(context);
+              Navigator.pushNamed(context, '/wallet');
+            }),
             _drawerItem(Icons.history, "Ride History", () {
               Navigator.pop(context);
               Navigator.pushNamed(context, '/my_trips');
@@ -143,11 +179,10 @@ class _SideDrawerState extends State<SideDrawer> {
               Navigator.pop(context);
               Navigator.pushNamed(context, '/my_trips');
             }),
-            _drawerItem(Icons.local_shipping_outlined, "My Parcels", () {
+            _drawerItem(Icons.account_balance_wallet, "Wallet", () {
               Navigator.pop(context);
-              Navigator.pushNamed(context, '/my_trips');
+              Navigator.pushNamed(context, '/wallet');
             }),
-            _drawerItem(Icons.payment, "Payments", () {}),
           ],
 
           const Divider(),

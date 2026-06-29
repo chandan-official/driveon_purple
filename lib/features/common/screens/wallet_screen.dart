@@ -18,6 +18,8 @@ class _WalletScreenState extends State<WalletScreen> {
   double _walletBalance = 0.0;
   List<dynamic> _transactions = [];
   String? _errorMessage;
+  String? _userEmail;
+  String? _userPhone;
 
   double _pendingTopupAmount = 0.0;
   bool _isProcessingPayment = false;
@@ -57,6 +59,15 @@ class _WalletScreenState extends State<WalletScreen> {
       } else {
         setState(() => _errorMessage = res['message'] ?? 'Failed to load wallet');
       }
+
+      try {
+        final profileRes = await _api.getUserProfile();
+        if (profileRes is Map && profileRes['data'] is Map) {
+          final pData = profileRes['data'];
+          _userEmail = pData['email']?.toString();
+          _userPhone = pData['phone']?.toString();
+        }
+      } catch (_) {}
     } catch (e) {
       setState(() => _errorMessage = e.toString().replaceAll("Exception: ", ""));
     } finally {
@@ -166,60 +177,80 @@ class _WalletScreenState extends State<WalletScreen> {
               onPressed: isSubmitting
                   ? null
                   : () async {
+                      final scaffoldMessenger = ScaffoldMessenger.of(this.context);
                       final double? val = double.tryParse(amountController.text);
                       if (val == null || val <= 0) {
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        scaffoldMessenger.showSnackBar(
                           const SnackBar(content: Text("Enter a valid amount")),
                         );
                         return;
                       }
 
                       setDialogState(() => isSubmitting = true);
+                      dynamic orderRes;
                       try {
-                        final orderRes = await _api.createWalletTopupOrder(val);
-                        if (!mounted) return;
-                        Navigator.pop(ctx);
+                        orderRes = await _api.createWalletTopupOrder(val);
+                      } catch (err) {
+                        setDialogState(() => isSubmitting = false);
+                        if (mounted) {
+                          scaffoldMessenger.showSnackBar(
+                            SnackBar(content: Text("Payment setup failed: $err")),
+                          );
+                        }
+                        return;
+                      }
 
-                        _pendingTopupAmount = val;
-                        setState(() => _isProcessingPayment = true);
+                      if (!mounted) return;
+                      Navigator.pop(ctx);
 
-                        if (orderRes['isFallback'] == true) {
-                          // Fallback simulation mode
-                          final verifyRes = await _api.verifyWalletTopupPayment(
+                      _pendingTopupAmount = val;
+                      setState(() => _isProcessingPayment = true);
+
+                      try {
+                        final order = orderRes['order'];
+                        final keyId = orderRes['razorpayKeyId'] ?? orderRes['keyId'] ?? orderRes['key'];
+                        final String orderId = order?['id']?.toString() ?? '';
+
+                        if (order != null && keyId != null && keyId.toString().isNotEmpty && !orderId.startsWith('order_sim_')) {
+                          final options = {
+                            'key': keyId.toString(),
+                            'amount': order['amount'],
+                            'name': 'DriveOn',
+                            'description': 'Add ₹$val to DriveOn Wallet',
+                            'order_id': orderId,
+                            'prefill': {
+                              'contact': _userPhone ?? '',
+                              'email': _userEmail ?? '',
+                            },
+                          };
+                          _razorpay.open(options);
+                        } else if (orderRes['isFallback'] == true || orderId.startsWith('order_sim_')) {
+                          // Backend is in simulation/fallback mode
+                          await _api.verifyWalletTopupPayment(
                             amount: val,
-                            razorpayOrderId: orderRes['order']['id'],
+                            razorpayOrderId: orderId,
                             razorpayPaymentId: 'pay_sim_${DateTime.now().millisecondsSinceEpoch}',
                             razorpaySignature: 'simulated',
                             isFallback: true,
                           );
                           if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text("Wallet topped up successfully! ✅")),
+                          scaffoldMessenger.showSnackBar(
+                            const SnackBar(content: Text("Wallet topped up (Backend Simulator Mode)! ✅")),
                           );
                           _fetchWalletDetails();
-                          setState(() => _isProcessingPayment = false);
                         } else {
-                          // Real Razorpay gateway checkout
-                          final order = orderRes['order'];
-                          final options = {
-                            'key': orderRes['razorpayKeyId'],
-                            'amount': order['amount'],
-                            'name': 'DriveOn Wallet TopUp',
-                            'description': 'Add ₹$val to DriveOn Wallet',
-                            'order_id': order['id'],
-                            'prefill': {
-                              'contact': '',
-                              'email': '',
-                            },
-                          };
-                          _razorpay.open(options);
+                          throw "Invalid Razorpay order details returned by server";
                         }
                       } catch (err) {
-                        setDialogState(() => isSubmitting = false);
-                        setState(() => _isProcessingPayment = false);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text("Payment setup failed: $err")),
-                        );
+                        if (mounted) {
+                          scaffoldMessenger.showSnackBar(
+                            SnackBar(content: Text("Payment processing failed: $err")),
+                          );
+                        }
+                      } finally {
+                        if (mounted) {
+                          setState(() => _isProcessingPayment = false);
+                        }
                       }
                     },
               child: isSubmitting

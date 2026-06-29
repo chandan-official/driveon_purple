@@ -158,13 +158,11 @@ class DriverRequestScreen extends StatelessWidget {
             ),
             const SizedBox(height: 20),
 
-            // 4. Request Tags (Passenger + Parcel)
+            // 4. Request Tags (Passenger)
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 _tag(Icons.person, "1 Passenger"),
-                const SizedBox(width: 10),
-                _tag(Icons.inventory_2_outlined, "Contains Parcel"),
               ],
             ),
 

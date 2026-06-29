@@ -16,14 +16,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   // Exact Text from your Reference Image
   final List<Map<String, String>> _pages = [
     {
-      "headline": "Welcome to DriveOn",
+      "headline": "Welcome to Ryndo",
       "subHeadline": "Your Ride, Your Way!",
       "image": "assets/images/onboarding_1.png",
     },
     // Keeping placeholders for 2 and 3 consistent with the style
     {
-      "headline": "Track Parcels",
-      "subHeadline": "Global Delivery Tracking",
+      "headline": "Safe & Secure",
+      "subHeadline": "Verified Drivers & Real-time Tracking",
       "image": "assets/images/onboarding_2.png",
     },
     {
@@ -99,32 +99,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             right: 0,
             child: Column(
               children: [
-                // A. THE LOGO ("DriveOn") - BIGGER
+                // A. THE LOGO ("Ryndo")
                 FadeSlideTransition(
                   delay: 0,
-                  child: RichText(
+                  child: Text(
+                    'Ryndo',
                     textAlign: TextAlign.center,
-                    text: const TextSpan(
-                      children: [
-                        TextSpan(
-                          text: 'Drive',
-                          style: TextStyle(
-                            color: AppColors.primaryPurple, // Navy Blue
-                            fontSize: 40, // INCREASED SIZE
-                            fontWeight: FontWeight.w900, // Extra Bold
-                            fontFamily: 'Roboto',
-                          ),
-                        ),
-                        TextSpan(
-                          text: 'On',
-                          style: TextStyle(
-                            color: AppColors.primaryGold, // Orange
-                            fontSize: 40, // INCREASED SIZE
-                            fontWeight: FontWeight.w900, // Extra Bold
-                            fontFamily: 'Roboto',
-                          ),
-                        ),
-                      ],
+                    style: const TextStyle(
+                      color: AppColors.primaryPurple,
+                      fontSize: 40,
+                      fontWeight: FontWeight.w900,
+                      fontFamily: 'Roboto',
                     ),
                   ),
                 ),

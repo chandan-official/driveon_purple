@@ -1,73 +1,100 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/color_constants.dart';
+import '../../../api/api_service.dart';
+import '../widgets/auth_layout.dart';
+import '../widgets/brand_components.dart';
 
-class ForgotPasswordScreen extends StatelessWidget {
+class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
 
   @override
+  State<ForgotPasswordScreen> createState() => _ForgotPasswordScreenState();
+}
+
+class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _emailController = TextEditingController();
+  final ApiService _api = ApiService();
+  bool _isLoading = false;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _sendResetCode() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isLoading = true);
+    try {
+      await _api.forgotPassword(email: _emailController.text.trim());
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Reset link sent to your email!')),
+      );
+      Navigator.pop(context);
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Something went wrong: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.backgroundLight,
-      appBar: AppBar(
-        backgroundColor: AppColors.backgroundLight,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: AppColors.textDark),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                "Forgot Password?",
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textDark,
+    return RyndoAuthLayout(
+      title: "Forgot Password?",
+      child: Form(
+        key: _formKey,
+        child: Column(
+          children: [
+            const Text(
+              "Don't worry! It happens. Please enter the email address linked with your account.",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: AppColors.textGrey,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 30),
+            RyndoTextField(
+              controller: _emailController,
+              hintText: "Enter your email",
+              keyboardType: TextInputType.emailAddress,
+              validator: (v) {
+                final value = (v ?? '').trim();
+                if (value.isEmpty) return 'Email is required';
+                if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(value)) {
+                  return 'Enter a valid email';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 30),
+            RyndoButton(
+              text: "Send Reset Code",
+              isLoading: _isLoading,
+              onPressed: _sendResetCode,
+            ),
+            const SizedBox(height: 20),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text(
+                "Back to Login",
+                style: TextStyle(
+                  color: AppColors.primaryPurple,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 10),
-              Text(
-                "Don't worry! It happens. Please enter the email address linked with your account.",
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: AppColors.textGrey,
-                  height: 1.5,
-                ),
-              ),
-              const SizedBox(height: 40),
-
-              // Email Input
-              TextFormField(
-                keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(
-                  labelText: "Enter your email",
-                  prefixIcon: Icon(Icons.email_outlined),
-                ),
-              ),
-
-              const SizedBox(height: 30),
-
-              // Send Code Button
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    // Logic: Send Reset Link -> Show Success Dialog or Snack bar
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text("Reset link sent to your email!"),
-                      ),
-                    );
-                    Navigator.pop(context); // Go back to Login
-                  },
-                  child: const Text("Send Reset Code"),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
