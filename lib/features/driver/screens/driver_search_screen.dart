@@ -14,6 +14,8 @@ class DriverSearchScreen extends StatefulWidget {
 class _DriverSearchScreenState extends State<DriverSearchScreen> {
   String _pickupAddress = "";
   String _dropAddress = "";
+  double? _pickupLat, _pickupLng;
+  double? _dropLat, _dropLng;
   GoogleMapController? _mapController;
   LatLng _currentLocation = const LatLng(20.5937, 78.9629); // India center fallback
 
@@ -43,11 +45,19 @@ class _DriverSearchScreenState extends State<DriverSearchScreen> {
   }
 
   void _onPickupSelected(PickedPlace place) {
-    setState(() => _pickupAddress = place.address);
+    setState(() {
+      _pickupAddress = place.address;
+      _pickupLat = place.lat;
+      _pickupLng = place.lng;
+    });
   }
 
   void _onDropSelected(PickedPlace place) {
-    setState(() => _dropAddress = place.address);
+    setState(() {
+      _dropAddress = place.address;
+      _dropLat = place.lat;
+      _dropLng = place.lng;
+    });
   }
 
   @override
@@ -129,6 +139,10 @@ class _DriverSearchScreenState extends State<DriverSearchScreen> {
                       Navigator.pushNamed(context, '/create_ride', arguments: {
                         'pickup': _pickupAddress,
                         'drop': _dropAddress,
+                        'pickupLat': _pickupLat,
+                        'pickupLng': _pickupLng,
+                        'dropLat': _dropLat,
+                        'dropLng': _dropLng,
                       });
                     },
                     child: const Icon(Icons.arrow_forward, color: Colors.white),

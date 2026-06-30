@@ -32,6 +32,10 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
   String? _editRideId;
   bool _agreeToCostSharing = false;
 
+  double? _minFare;
+  double? _maxFare;
+  bool _loadingFare = false;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -42,6 +46,44 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
       }
       if (args.containsKey('drop')) {
         _dropController.text = args['drop'] ?? '';
+      }
+      _pickupLat = args['pickupLat'];
+      _pickupLng = args['pickupLng'];
+      _dropLat = args['dropLat'];
+      _dropLng = args['dropLng'];
+
+      _fetchFareRange();
+    }
+  }
+
+  Future<void> _fetchFareRange() async {
+    final pLat = _pickupLat;
+    final pLng = _pickupLng;
+    final dLat = _dropLat;
+    final dLng = _dropLng;
+
+    if (pLat == null || pLng == null || dLat == null || dLng == null) return;
+    setState(() => _loadingFare = true);
+    try {
+      final res = await _api.estimateMapFare(
+        pickupLocation: {'lat': pLat, 'lng': pLng},
+        dropLocation: {'lat': dLat, 'lng': dLng},
+      );
+      if (res is Map && res['fareBreakdown'] is Map) {
+        final fb = res['fareBreakdown'];
+        setState(() {
+          _minFare = (fb['minFare'] as num?)?.toDouble();
+          _maxFare = (fb['maxFare'] as num?)?.toDouble();
+          if (_minFare != null) {
+            _priceController.text = _minFare!.toStringAsFixed(0);
+          }
+        });
+      }
+    } catch (e) {
+      print('Error fetching fare range: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _loadingFare = false);
       }
     }
   }
@@ -328,6 +370,24 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
               style: TextStyle(fontSize: 12, color: AppColors.primaryPurple, fontWeight: FontWeight.w600),
             ),
           ),
+          const SizedBox(height: 20),
+          if (_loadingFare)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 10),
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primaryPurple),
+              ),
+            )
+          else if (_minFare != null && _maxFare != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Text(
+                "Recommended Fare Range: ₹${_minFare!.toStringAsFixed(0)} - ₹${_maxFare!.toStringAsFixed(0)}",
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.primaryPurple),
+              ),
+            ),
           const SizedBox(height: 20),
           TextField(
             controller: _priceController,
