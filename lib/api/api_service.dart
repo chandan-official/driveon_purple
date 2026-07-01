@@ -396,12 +396,16 @@ class ApiService {
 
   Future<dynamic> updateBooking(String bookingId, Map<String, dynamic> body) => _patch('/bookings/$bookingId', body: body);
 
-  Future<dynamic> cancelBooking(String bookingId, {String? rideId, required String reason}) {
+  Future<dynamic> cancelBooking(String bookingId, {String? rideId, required String reason, String? refundDestination}) {
+    final Map<String, dynamic> body = {'reason': reason};
+    if (refundDestination != null) {
+      body['refundDestination'] = refundDestination;
+    }
     // If rideId is provided, use the nested ride-management path confirmed by user
     if (rideId != null) {
-      return _delete('/rides/$rideId/bookings/$bookingId', body: {'reason': reason});
+      return _delete('/rides/$rideId/bookings/$bookingId', body: body);
     }
-    return _delete('/bookings/$bookingId', body: {'reason': reason});
+    return _delete('/bookings/$bookingId', body: body);
   }
 
   Future<dynamic> getCancellationRules() => _get('/bookings/cancellation-rules');

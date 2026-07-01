@@ -23,6 +23,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   Map<String, dynamic>? _rideObj;
   int _seatsBooked = 1;
   int _amount = 0;
+  int _pendingCharge = 0;
   bool _parsedArgs = false;
   String? _pendingBookingId;
   String? _userEmail;
@@ -99,15 +100,15 @@ class _PaymentScreenState extends State<PaymentScreen> {
       final res = await _api.getUserProfile();
       if (res is Map && res['data'] is Map) {
         final data = res['data'];
+        final rawCharge = data['pendingCancellationCharge'] ?? 0;
         setState(() {
           _userEmail = data['email']?.toString();
           _userPhone = data['phone']?.toString();
+          _pendingCharge = rawCharge is num ? rawCharge.toInt() : (int.tryParse(rawCharge.toString()) ?? 0);
         });
       }
     } catch (e) {
       debugPrint("Failed to fetch user data for prefill: $e");
-    } finally {
-
     }
   }
 
@@ -135,7 +136,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         arguments: {
           'ride': _rideObj,
           'seatsBooked': _seatsBooked,
-          'amount': _amount,
+          'amount': _amount + _pendingCharge,
           'paymentMode': 'ONLINE',
         },
       );
@@ -201,13 +202,17 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
       if (isCod) {
         if (!mounted) return;
+        final bookingAmount = bookingData['totalAmount'] is num 
+            ? (bookingData['totalAmount'] as num).toInt() 
+            : _amount + _pendingCharge;
+
         Navigator.pushReplacementNamed(
           context, 
           '/booking_success',
           arguments: {
             'ride': _rideObj,
             'seatsBooked': _seatsBooked,
-            'amount': _amount,
+            'amount': bookingAmount,
             'paymentMode': 'COD',
           },
         );
@@ -329,13 +334,32 @@ class _PaymentScreenState extends State<PaymentScreen> {
                         ),
                         const SizedBox(height: 5),
                         Text(
-                          "₹ $_amount",
+                          "₹ ${_amount + _pendingCharge}",
                           style: TextStyle(
                             fontSize: 32,
                             fontWeight: FontWeight.bold,
                             color: AppColors.primaryPurple,
                           ),
                         ),
+                        if (_pendingCharge > 0) ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.amber.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.amber.shade200),
+                            ),
+                            child: Text(
+                              "Includes ₹$_pendingCharge unpaid cancellation fee",
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.amber.shade900,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -458,7 +482,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
                     child: Text(
                       _isSubmitting
                           ? 'Processing...'
-                          : (_selectedMethod == 2 ? "Confirm Cash Contribution" : "Contribute ₹ $_amount"),
+                          : (_selectedMethod == 2 ? "Confirm Cash Contribution" : "Contribute ₹ ${_amount + _pendingCharge}"),
                       style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
                     ),
                   ),

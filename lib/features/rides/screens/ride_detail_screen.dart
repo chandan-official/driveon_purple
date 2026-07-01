@@ -1011,168 +1011,211 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
     required List<dynamic> rules,
   }) {
     final reasonController = TextEditingController();
+    String refundDestination = 'ORIGINAL_SOURCE';
+    final isOnline = (_booking!['paymentMode'] ?? '') == 'ONLINE';
 
     showDialog(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Text(
-            'Confirm Cancellation',
-            style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 18),
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (rules.isNotEmpty) ...[
-                  const Text(
-                    'Cancellation Refund Policy:',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textDark, fontSize: 14),
-                  ),
-                  const SizedBox(height: 6),
-                  Container(
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.grey.shade300),
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: Text(
+                'Confirm Cancellation',
+                style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 18),
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (rules.isNotEmpty) ...[
+                      const Text(
+                        'Cancellation Refund Policy:',
+                        style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textDark, fontSize: 14),
+                      ),
+                      const SizedBox(height: 6),
+                      Container(
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: rules.map<Widget>((rule) {
+                            final hours = rule['hoursBefore'] ?? 0;
+                            final pct = rule['refundPercent'] ?? 0;
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    '≥ $hours hour${hours != 1 ? 's' : ''} before start',
+                                    style: const TextStyle(fontSize: 12, color: AppColors.textDark, fontWeight: FontWeight.w500),
+                                  ),
+                                  Text(
+                                    '$pct% refund',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                      color: pct > 0 ? Colors.green.shade700 : Colors.red,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+                    const Text(
+                      'Cancellation Refund Calculation:',
+                      style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textDark, fontSize: 14),
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: rules.map<Widget>((rule) {
-                        final hours = rule['hoursBefore'] ?? 0;
-                        final pct = rule['refundPercent'] ?? 0;
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                '≥ $hours hour${hours != 1 ? 's' : ''} before start',
-                                style: const TextStyle(fontSize: 12, color: AppColors.textDark, fontWeight: FontWeight.w500),
-                              ),
-                              Text(
-                                '$pct% refund',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                  color: pct > 0 ? Colors.green.shade700 : Colors.red,
-                                ),
-                              ),
-                            ],
+                    const SizedBox(height: 8),
+                    Text(
+                      hoursRemaining <= 0
+                          ? '• Time remaining: Ride departed.'
+                          : '• Time remaining: ${hoursRemaining.toStringAsFixed(1)} hours before departure.',
+                      style: const TextStyle(fontSize: 13, color: AppColors.textGrey),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '• Refund eligibility: ${refundPercent.toStringAsFixed(0)}%',
+                      style: const TextStyle(fontSize: 13, color: AppColors.textGrey),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '• Expected Refund: ₹${refundAmount.toStringAsFixed(2)} (out of ₹${totalPaid.toStringAsFixed(2)})',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: refundAmount > 0 ? Colors.green.shade700 : Colors.red,
+                      ),
+                    ),
+                    if (isOnline && refundAmount > 0) ...[
+                      const SizedBox(height: 18),
+                      const Text(
+                        'Refund Destination:',
+                        style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textDark, fontSize: 13),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ChoiceChip(
+                              label: const Text('Original Source', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                              selected: refundDestination == 'ORIGINAL_SOURCE',
+                              selectedColor: AppColors.primaryPurple.withOpacity(0.15),
+                              onSelected: (val) {
+                                if (val) setState(() => refundDestination = 'ORIGINAL_SOURCE');
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: ChoiceChip(
+                              label: const Text('Ryndo Wallet', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                              selected: refundDestination == 'WALLET',
+                              selectedColor: AppColors.primaryPurple.withOpacity(0.15),
+                              onSelected: (val) {
+                                if (val) setState(() => refundDestination = 'WALLET');
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 18),
+                    const Text(
+                      'Please provide a reason for cancellation:',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: reasonController,
+                      maxLines: 2,
+                      decoration: InputDecoration(
+                        hintText: 'Reason...',
+                        hintStyle: const TextStyle(color: Colors.grey, fontSize: 13),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Go Back', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: () async {
+                    final reason = reasonController.text.trim();
+                    if (reason.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Please enter a cancellation reason')),
+                      );
+                      return;
+                    }
+    
+                    // Show loading
+                    showDialog(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (context) => const Center(child: CircularProgressIndicator()),
+                    );
+    
+                    try {
+                      await _api.loadToken();
+                      await _api.cancelBooking(
+                        bookingId,
+                        reason: reason,
+                        refundDestination: isOnline ? refundDestination : null,
+                      );
+                      // Dismiss loading and dialog
+                      if (context.mounted) {
+                        Navigator.of(context, rootNavigator: true).pop(); // dismiss loading
+                        Navigator.pop(context); // dismiss confirm dialog
+                        
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(refundPercent > 0
+                                ? 'Cancellation successful. Refund of ₹${refundAmount.toStringAsFixed(2)} initiated!'
+                                : 'Booking cancelled successfully.'),
+                            backgroundColor: Colors.green,
                           ),
                         );
-                      }).toList(),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                ],
-                const Text(
-                  'Cancellation Refund Calculation:',
-                  style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textDark, fontSize: 14),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  hoursRemaining <= 0
-                      ? '• Time remaining: Ride departed.'
-                      : '• Time remaining: ${hoursRemaining.toStringAsFixed(1)} hours before departure.',
-                  style: const TextStyle(fontSize: 13, color: AppColors.textGrey),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '• Refund eligibility: ${refundPercent.toStringAsFixed(0)}%',
-                  style: const TextStyle(fontSize: 13, color: AppColors.textGrey),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '• Expected Refund: ₹${refundAmount.toStringAsFixed(2)} (out of ₹${totalPaid.toStringAsFixed(2)})',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: refundAmount > 0 ? Colors.green.shade700 : Colors.red,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                const Text(
-                  'Please provide a reason for cancellation:',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: reasonController,
-                  maxLines: 2,
-                  decoration: InputDecoration(
-                    hintText: 'Reason...',
-                    hintStyle: const TextStyle(color: Colors.grey, fontSize: 13),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  ),
+    
+                        // Navigate back to home
+                        Navigator.pushNamedAndRemoveUntil(context, '/home', (r) => false);
+                      }
+                    } catch (e) {
+                      // Dismiss loading
+                      if (context.mounted) {
+                        Navigator.of(context, rootNavigator: true).pop();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Cancellation failed: $e')),
+                        );
+                      }
+                    }
+                  },
+                  child: const Text('Confirm Cancel', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                 ),
               ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Go Back', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              onPressed: () async {
-                final reason = reasonController.text.trim();
-                if (reason.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Please enter a cancellation reason')),
-                  );
-                  return;
-                }
-
-                // Show loading
-                showDialog(
-                  context: context,
-                  barrierDismissible: false,
-                  builder: (context) => const Center(child: CircularProgressIndicator()),
-                );
-
-                try {
-                  await _api.loadToken();
-                  await _api.cancelBooking(bookingId, reason: reason);
-                  // Dismiss loading and dialog
-                  if (context.mounted) {
-                    Navigator.of(context, rootNavigator: true).pop(); // dismiss loading
-                    Navigator.pop(context); // dismiss confirm dialog
-                    
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(refundPercent > 0
-                            ? 'Cancellation successful. Refund of ₹${refundAmount.toStringAsFixed(2)} initiated!'
-                            : 'Booking cancelled successfully.'),
-                        backgroundColor: Colors.green,
-                      ),
-                    );
-
-                    // Navigate back to home
-                    Navigator.pushNamedAndRemoveUntil(context, '/home', (r) => false);
-                  }
-                } catch (e) {
-                  // Dismiss loading
-                  if (context.mounted) {
-                    Navigator.of(context, rootNavigator: true).pop();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Cancellation failed: $e')),
-                    );
-                  }
-                }
-              },
-              child: const Text('Confirm Cancel', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            ),
-          ],
+            );
+          }
         );
       },
     );
