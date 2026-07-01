@@ -19,7 +19,8 @@ class BookingSuccessScreen extends StatelessWidget {
     final String to = (rideObj?['to'] ?? rideObj?['route']?['endCity'] ?? 'N/A').toString();
 
     // Formatting date and time
-    final String travelDate = (rideObj?['travelDate'] ?? 'N/A').toString();
+    final String travelDateRaw = (rideObj?['travelDate'] ?? 'N/A').toString();
+    final String travelDate = _formatDate(travelDateRaw);
     final String startTime = (rideObj?['startTime'] ?? rideObj?['time'] ?? 'N/A').toString();
 
     // Payment details
@@ -342,5 +343,32 @@ class BookingSuccessScreen extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  String _formatDate(String dateStr) {
+    if (dateStr == 'N/A' || dateStr.isEmpty) return 'N/A';
+    try {
+      // Handles 2026-07-01T00:00:00.000Z or similar standard ISO formats
+      DateTime dt = DateTime.parse(dateStr);
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      String day = dt.day.toString().padLeft(2, '0');
+      String month = months[dt.month - 1];
+      String year = dt.year.toString();
+      return "$day $month $year";
+    } catch (e) {
+      // Fallback parser if DateTime.parse fails
+      try {
+        final cleanDate = dateStr.split('T')[0];
+        final parts = cleanDate.split('-');
+        if (parts.length == 3) {
+          final year = parts[0];
+          final monthInt = int.parse(parts[1]);
+          final day = parts[2].padLeft(2, '0');
+          const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+          return "$day ${months[monthInt - 1]} $year";
+        }
+      } catch (_) {}
+      return dateStr;
+    }
   }
 }
