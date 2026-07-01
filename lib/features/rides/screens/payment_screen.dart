@@ -132,7 +132,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
       Navigator.pushReplacementNamed(
         context, 
         '/booking_success',
-        arguments: {'ride': _rideObj}, // Pass the ride object
+        arguments: {
+          'ride': _rideObj,
+          'seatsBooked': _seatsBooked,
+          'amount': _amount,
+          'paymentMode': 'ONLINE',
+        },
       );
     } catch (e) {
       if (!mounted) return;
@@ -199,7 +204,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
         Navigator.pushReplacementNamed(
           context, 
           '/booking_success',
-          arguments: {'ride': _rideObj}, // Pass the ride object
+          arguments: {
+            'ride': _rideObj,
+            'seatsBooked': _seatsBooked,
+            'amount': _amount,
+            'paymentMode': 'COD',
+          },
         );
       } else {
         _pendingBookingId = bookingId;

@@ -7,6 +7,26 @@ class BookingSuccessScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Extract arguments passed from PaymentScreen
+    final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>? ?? {};
+    final rideObj = args['ride'] as Map<String, dynamic>?;
+    final int seatsBooked = args['seatsBooked'] as int? ?? 1;
+    final int amount = args['amount'] as int? ?? 0;
+    final String paymentMode = args['paymentMode'] as String? ?? 'COD';
+
+    // Extracting route locations
+    final String from = (rideObj?['from'] ?? rideObj?['route']?['startCity'] ?? 'N/A').toString();
+    final String to = (rideObj?['to'] ?? rideObj?['route']?['endCity'] ?? 'N/A').toString();
+
+    // Formatting date and time
+    final String travelDate = (rideObj?['travelDate'] ?? 'N/A').toString();
+    final String startTime = (rideObj?['startTime'] ?? rideObj?['time'] ?? 'N/A').toString();
+
+    // Payment details
+    final String paymentMethodText = paymentMode == 'COD' 
+        ? 'Pay on Boarding (Cash)' 
+        : 'Paid Online (UPI/Card)';
+
     return Scaffold(
       backgroundColor: AppColors.backgroundLight,
       body: Stack(
@@ -29,52 +49,59 @@ class BookingSuccessScreen extends StatelessWidget {
 
           SafeArea(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 30.0, vertical: 50.0),
+              padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 40.0),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const SizedBox(height: 40),
+                  const SizedBox(height: 20),
                   
                   // 1. Success Animation / Icon
                   _buildSuccessAnimation(),
 
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 24),
 
                   // 2. Title & Subtitle
                   Text(
                     "Booking Confirmed!",
                     style: GoogleFonts.inter(
-                      fontSize: 28,
+                      fontSize: 26,
                       fontWeight: FontWeight.bold,
                       color: AppColors.textDark,
                       letterSpacing: -0.5,
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   const Text(
                     "Your trip has been booked successfully.\nWe've notified the driver of your request.",
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: AppColors.textGrey,
-                      fontSize: 15,
-                      height: 1.5,
+                      fontSize: 14,
+                      height: 1.4,
                     ),
                   ),
 
-                  const SizedBox(height: 40),
+                  const SizedBox(height: 32),
 
                   // 3. Ticket Summary Card
-                  _buildTicketSummary(),
+                  _buildTicketSummary(
+                    from: from,
+                    to: to,
+                    date: travelDate,
+                    time: startTime,
+                    seats: seatsBooked,
+                    amount: amount,
+                    paymentMethod: paymentMethodText,
+                  ),
 
-                  const SizedBox(height: 50),
+                  const SizedBox(height: 32),
 
                   // 4. Primary Actions
                   SizedBox(
                     width: double.infinity,
-                    height: 56,
+                    height: 54,
                     child: ElevatedButton(
                       onPressed: () {
-                        final args = ModalRoute.of(context)?.settings.arguments;
                         Navigator.pushReplacementNamed(
                           context, 
                           '/track_ride',
@@ -89,12 +116,12 @@ class BookingSuccessScreen extends StatelessWidget {
                       ),
                       child: const Text(
                         "Track My Ride",
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
                       ),
                     ),
                   ),
 
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 16),
 
                   TextButton(
                     onPressed: () => Navigator.pushNamedAndRemoveUntil(context, '/home', (r) => false),
@@ -103,7 +130,7 @@ class BookingSuccessScreen extends StatelessWidget {
                       style: GoogleFonts.inter(
                         color: AppColors.primaryPurple,
                         fontWeight: FontWeight.w600,
-                        fontSize: 16,
+                        fontSize: 15,
                       ),
                     ),
                   ),
@@ -122,16 +149,16 @@ class BookingSuccessScreen extends StatelessWidget {
       children: [
         // Outer Rings
         Container(
-          width: 160,
-          height: 160,
+          width: 140,
+          height: 140,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: Colors.green.withOpacity(0.05),
           ),
         ),
         Container(
-          width: 120,
-          height: 120,
+          width: 100,
+          height: 100,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: Colors.green.withOpacity(0.1),
@@ -139,11 +166,11 @@ class BookingSuccessScreen extends StatelessWidget {
         ),
         // Main Check Circle
         Container(
-          width: 80,
-          height: 80,
+          width: 70,
+          height: 70,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            gradient: LinearGradient(
+            gradient: const LinearGradient(
               colors: [Colors.green, Color(0xFF43A047)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -151,14 +178,14 @@ class BookingSuccessScreen extends StatelessWidget {
             boxShadow: [
               BoxShadow(
                 color: Colors.green.withOpacity(0.3),
-                blurRadius: 20,
-                offset: const Offset(0, 8),
+                blurRadius: 15,
+                offset: const Offset(0, 6),
               ),
             ],
           ),
           child: const Icon(
             Icons.check,
-            size: 40,
+            size: 36,
             color: Colors.white,
           ),
         ),
@@ -166,30 +193,90 @@ class BookingSuccessScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildTicketSummary() {
+  Widget _buildTicketSummary({
+    required String from,
+    required String to,
+    required String date,
+    required String time,
+    required int seats,
+    required int amount,
+    required String paymentMethod,
+  }) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 15,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(20),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildSummaryRow("Trip Type", "Intercity Share"),
-                const Divider(height: 32),
-                _buildSummaryRow("Status", "Driver Notified", valueColor: Colors.green.shade700),
-                const Divider(height: 32),
-                _buildSummaryRow("Confirmation", "Instant Confirm"),
+                // Route: Source -> Destination
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text("Source", style: TextStyle(color: AppColors.textGrey, fontSize: 12)),
+                          const SizedBox(height: 4),
+                          Text(from, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.textDark)),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.swap_horiz, color: AppColors.primaryPurple, size: 24),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          const Text("Destination", style: TextStyle(color: AppColors.textGrey, fontSize: 12)),
+                          const SizedBox(height: 4),
+                          Text(to, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.textDark)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const Divider(height: 28),
+                // Date & Time
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text("Date", style: TextStyle(color: AppColors.textGrey, fontSize: 12)),
+                        const SizedBox(height: 4),
+                        Text(date, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.textDark)),
+                      ],
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        const Text("Departure Time", style: TextStyle(color: AppColors.textGrey, fontSize: 12)),
+                        const SizedBox(height: 4),
+                        Text(time, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.textDark)),
+                      ],
+                    ),
+                  ],
+                ),
+                const Divider(height: 28),
+                // Booking Specific Details
+                _buildSummaryRow("Seats Booked", "$seats seat${seats > 1 ? 's' : ''}"),
+                const SizedBox(height: 10),
+                _buildSummaryRow("Payment Mode", paymentMethod),
+                const SizedBox(height: 10),
+                _buildSummaryRow("Total Contribution", "₹${amount.toStringAsFixed(0)}", valueColor: AppColors.primaryPurple),
               ],
             ),
           ),
@@ -206,12 +293,12 @@ class BookingSuccessScreen extends StatelessWidget {
             ),
           ),
           Container(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               color: Colors.grey.shade50,
               borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(24),
-                bottomRight: Radius.circular(24),
+                bottomLeft: Radius.circular(20),
+                bottomRight: Radius.circular(20),
               ),
             ),
             child: Row(
@@ -222,7 +309,7 @@ class BookingSuccessScreen extends StatelessWidget {
                 Expanded(
                   child: Text(
                     "Driver info is available in Track Ride",
-                    style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
                   ),
                 ),
               ],
@@ -239,7 +326,7 @@ class BookingSuccessScreen extends StatelessWidget {
       children: [
         Text(
           label,
-          style: const TextStyle(color: AppColors.textGrey, fontSize: 14),
+          style: const TextStyle(color: AppColors.textGrey, fontSize: 13),
         ),
         const SizedBox(width: 8),
         Flexible(
@@ -249,7 +336,7 @@ class BookingSuccessScreen extends StatelessWidget {
             style: TextStyle(
               color: valueColor ?? AppColors.textDark,
               fontWeight: FontWeight.bold,
-              fontSize: 15,
+              fontSize: 14,
             ),
           ),
         ),
