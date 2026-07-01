@@ -831,6 +831,7 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
 
     try {
       // 1. Fetch cancellation rules from backend
+      await _api.loadToken();
       final rulesRes = await _api.getCancellationRules();
       List<dynamic> rules = [];
       if (rulesRes is Map && rulesRes['data'] is List) {
@@ -984,6 +985,7 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
                 );
 
                 try {
+                  await _api.loadToken();
                   await _api.cancelBooking(bookingId, reason: reason);
                   // Dismiss loading and dialog
                   if (context.mounted) {
