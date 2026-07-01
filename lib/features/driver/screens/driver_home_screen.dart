@@ -4,6 +4,8 @@ import '../../../api/api_service.dart';
 import '../models/ride_model.dart';
 
 class DriverHomeScreen extends StatefulWidget {
+  static final ValueNotifier<bool> refreshNotifier = ValueNotifier(false);
+
   const DriverHomeScreen({super.key});
 
   @override
@@ -21,6 +23,21 @@ class _DriverHomeScreenState extends State<DriverHomeScreen> with SingleTickerPr
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _fetchRides();
+    DriverHomeScreen.refreshNotifier.addListener(_onRefreshNotified);
+  }
+
+  @override
+  void dispose() {
+    DriverHomeScreen.refreshNotifier.removeListener(_onRefreshNotified);
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  void _onRefreshNotified() {
+    if (DriverHomeScreen.refreshNotifier.value) {
+      DriverHomeScreen.refreshNotifier.value = false;
+      _fetchRides();
+    }
   }
 
   Future<void> _fetchRides() async {

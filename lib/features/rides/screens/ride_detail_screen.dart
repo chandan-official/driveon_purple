@@ -19,6 +19,7 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
   Map<String, dynamic>? _initialRide;
   String _rideId = '';
   Map<String, dynamic>? _booking;
+  Map<String, dynamic>? _fareConfig;
 
   int _selectedSeats = 1;
   bool _agreeToPassengerSharing = false;
@@ -56,6 +57,9 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
     final res = await _api.getRideById(_rideId);
     debugPrint("RIDE DETAIL PAYLOAD: ${jsonEncode(res)}");
     if (res is Map && res['data'] is Map) {
+      if (res['fareConfig'] is Map) {
+        _fareConfig = (res['fareConfig'] as Map).cast<String, dynamic>();
+      }
       return (res['data'] as Map).cast<String, dynamic>();
     }
     if (res is Map) return res.cast<String, dynamic>();
@@ -245,7 +249,15 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
           _selectedSeats = safeMaxSeats;
         }
 
-        final totalPrice = (fare * _selectedSeats);
+        final config = _fareConfig ?? {
+          'platformFee': 0.0,
+          'gstPercent': 5.0,
+        };
+        final double platformFeeVal = (config['platformFee'] as num?)?.toDouble() ?? 0.0;
+        final double gstPercentVal = (config['gstPercent'] as num?)?.toDouble() ?? 0.0;
+        final double gstVal = platformFeeVal * (gstPercentVal / 100.0);
+        final double totalPricePerSeat = fare + platformFeeVal + gstVal;
+        final double totalPrice = totalPricePerSeat * _selectedSeats;
 
         return Scaffold(
           backgroundColor: AppColors.backgroundDark,
@@ -482,13 +494,65 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
                               ),
                               const SizedBox(height: 14),
 
+                              // Dynamic Price Breakdown
+                              (() {
+                                final config = _fareConfig ?? {
+                                  'platformFee': 0.0,
+                                  'gstPercent': 5.0,
+                                };
+                                final double platformFee = (config['platformFee'] as num?)?.toDouble() ?? 0.0;
+                                final double gstPercent = (config['gstPercent'] as num?)?.toDouble() ?? 0.0;
+
+                                final double gst = platformFee * (gstPercent / 100.0);
+                                final double baseShare = fare;
+
+                                final double totalBase = baseShare * _selectedSeats;
+                                final double totalPlatform = platformFee * _selectedSeats;
+                                final double totalGst = gst * _selectedSeats;
+
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Divider(height: 24),
+                                    const Text(
+                                      'Price Breakdown',
+                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.textDark),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text('Driver Share (${_selectedSeats} seat${_selectedSeats > 1 ? 's' : ''})', style: const TextStyle(color: Colors.black54, fontSize: 13)),
+                                        Text('₹${totalBase.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.textDark, fontSize: 13, fontWeight: FontWeight.w500)),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        const Text('Platform Fee (Flat)', style: TextStyle(color: Colors.black54, fontSize: 13)),
+                                        Text('₹${totalPlatform.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.textDark, fontSize: 13, fontWeight: FontWeight.w500)),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text('GST on Platform Fee (${gstPercent.toStringAsFixed(0)}%)', style: const TextStyle(color: Colors.black54, fontSize: 13)),
+                                        Text('₹${totalGst.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.textDark, fontSize: 13, fontWeight: FontWeight.w500)),
+                                      ],
+                                    ),
+                                  ],
+                                );
+                              })(),
+
                               const Divider(height: 24),
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  const Text('Total Amount', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                                  const Text('Grand Total', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
                                   Text(
-                                    '₹${totalPrice.toStringAsFixed(0)}',
+                                    '₹${totalPrice.toStringAsFixed(2)}',
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 24,

@@ -7,6 +7,8 @@ import '../../common/screens/chat_inbox_screen.dart';
 import 'driver_search_screen.dart';
 
 class DriverHub extends StatefulWidget {
+  static final ValueNotifier<int> tabNotifier = ValueNotifier(0);
+
   const DriverHub({super.key});
 
   @override
@@ -22,6 +24,26 @@ class _DriverHubState extends State<DriverHub> {
     const ChatInboxScreen(),
     const ProfileScreen(),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    DriverHub.tabNotifier.addListener(_onTabNotified);
+  }
+
+  @override
+  void dispose() {
+    DriverHub.tabNotifier.removeListener(_onTabNotified);
+    super.dispose();
+  }
+
+  void _onTabNotified() {
+    if (mounted) {
+      setState(() {
+        _currentIndex = DriverHub.tabNotifier.value;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

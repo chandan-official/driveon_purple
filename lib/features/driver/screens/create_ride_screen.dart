@@ -3,6 +3,9 @@ import 'package:table_calendar/table_calendar.dart';
 import '../../../api/api_service.dart';
 import '../../../core/constants/color_constants.dart';
 import '../../common/screens/place_picker_field.dart';
+import '../../common/widgets/animated_dialog.dart';
+import 'driver_home_screen.dart';
+import 'driver_hub.dart';
 
 class CreateRideScreen extends StatefulWidget {
   const CreateRideScreen({Key? key}) : super(key: key);
@@ -36,6 +39,20 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
   double? _maxFare;
   bool _loadingFare = false;
 
+  double? _distanceKm;
+  double _platformFee = 0.0;
+  double _gstPercent = 0.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _priceController.addListener(() {
+      if (mounted) {
+        setState(() {});
+      }
+    });
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -65,19 +82,27 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
     if (pLat == null || pLng == null || dLat == null || dLng == null) return;
     setState(() => _loadingFare = true);
     try {
+      await _api.loadToken();
       final res = await _api.estimateMapFare(
         pickupLocation: {'lat': pLat, 'lng': pLng},
         dropLocation: {'lat': dLat, 'lng': dLng},
       );
-      if (res is Map && res['fareBreakdown'] is Map) {
-        final fb = res['fareBreakdown'];
-        setState(() {
-          _minFare = (fb['minFare'] as num?)?.toDouble();
-          _maxFare = (fb['maxFare'] as num?)?.toDouble();
-          if (_minFare != null) {
-            _priceController.text = _minFare!.toStringAsFixed(0);
-          }
-        });
+      if (res is Map) {
+        if (res['metrics'] is Map) {
+          _distanceKm = (res['metrics']['distanceKm'] as num?)?.toDouble();
+        }
+        if (res['fareBreakdown'] is Map) {
+          final fb = res['fareBreakdown'];
+          setState(() {
+            _minFare = (fb['minFare'] as num?)?.toDouble();
+            _maxFare = (fb['maxFare'] as num?)?.toDouble();
+            _platformFee = (fb['platformFee'] as num?)?.toDouble() ?? 0.0;
+            _gstPercent = (fb['gstPercent'] as num?)?.toDouble() ?? 0.0;
+            if (_minFare != null) {
+              _priceController.text = _minFare!.toStringAsFixed(0);
+            }
+          });
+        }
       }
     } catch (e) {
       print('Error fetching fare range: $e');
@@ -125,6 +150,33 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
   }
 
   Future<void> _submitRide() async {
+    final double? price = double.tryParse(_priceController.text);
+    if (price == null) {
+      showAnimatedDialog(
+        context,
+        title: "Invalid Price",
+        message: "Please enter a valid price per seat.",
+        type: AnimatedDialogType.warning,
+      );
+      return;
+    }
+
+    if (_minFare != null && _maxFare != null) {
+      if (price < _minFare! || price > _maxFare!) {
+        showAnimatedDialog(
+          context,
+          title: "Price Out of Range",
+          message: "Price per seat must be within the recommended range:\n₹${_minFare!.toStringAsFixed(0)} - ₹${_maxFare!.toStringAsFixed(0)}",
+          type: AnimatedDialogType.error,
+        );
+        return;
+      }
+    }
+
+    final double platformFee = _platformFee;
+    final double gst = platformFee * (_gstPercent / 100.0);
+    final double totalPrice = price + platformFee + gst;
+
     setState(() => _isPosting = true);
     try {
       final payload = {
@@ -136,7 +188,7 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
         "travelDate": "${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}",
         "startTime": _selectedTime.format(context),
         "pricing": {
-          "pricePerSeat": double.tryParse(_priceController.text) ?? 450.0,
+          "pricePerSeat": price,
         },
         "totalSeats": _seatCount,
         "availableSeats": _seatCount,
@@ -150,13 +202,25 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
       }
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_isEditMode ? "Ride updated!" : "Ride published!")),
+      await showAnimatedDialog(
+        context,
+        title: _isEditMode ? "Ride Updated" : "Ride Published",
+        message: _isEditMode ? "Your ride has been updated successfully!" : "Your ride has been published successfully!",
+        type: AnimatedDialogType.success,
       );
-      Navigator.pop(context, true);
+      if (mounted) {
+        DriverHomeScreen.refreshNotifier.value = true;
+        DriverHub.tabNotifier.value = 1; // Index 1 is the "Rides" tab
+        Navigator.pop(context, true);
+      }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+        showAnimatedDialog(
+          context,
+          title: "Failed to Publish",
+          message: "An error occurred while publishing: $e",
+          type: AnimatedDialogType.error,
+        );
       }
     } finally {
       if (mounted) setState(() => _isPosting = false);
@@ -349,80 +413,163 @@ class _CreateRideScreenState extends State<CreateRideScreen> {
 
   // --- STEP 5: Final Price (Not in image but required for API) ---
   Widget _buildStepFinalPrice() {
+    final double chosenPrice = double.tryParse(_priceController.text) ?? 0.0;
+    final double platformFee = _platformFee;
+    final double gst = platformFee * (_gstPercent / 100.0);
+    final double totalPrice = chosenPrice + platformFee + gst;
+
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Text("Lastly, set your price per seat", 
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 20),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.purple.shade50,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Text(
-              "💡 Note: The set seat price is inclusive of all taxes (GST) and platform commission.",
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: AppColors.primaryPurple, fontWeight: FontWeight.w600),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  const Text(
+                    "Lastly, set your price per seat",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+                  if (_distanceKm != null) ...[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.directions_car, color: AppColors.primaryPurple, size: 20),
+                        const SizedBox(width: 6),
+                        Text(
+                          "Total Distance: ${_distanceKm!.toStringAsFixed(1)} km",
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.textDark),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.purple.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text(
+                      "💡 Note: The base price you set goes directly to you. Platform fee and GST will be added on top to determine the final passenger price.",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 12, color: AppColors.primaryPurple, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  if (_loadingFare)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 20),
+                      child: SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primaryPurple),
+                      ),
+                    )
+                  else if (_minFare != null && _maxFare != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      child: Text(
+                        "Recommended Base Fare Range: ₹${_minFare!.toStringAsFixed(0)} - ₹${_maxFare!.toStringAsFixed(0)}",
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.primaryPurple),
+                      ),
+                    ),
+                  TextField(
+                    controller: _priceController,
+                    keyboardType: TextInputType.number,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 48, fontWeight: FontWeight.bold, color: AppColors.primaryPurple),
+                    decoration: const InputDecoration(
+                      prefixText: "₹ ",
+                      hintText: "0",
+                      border: InputBorder.none,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Price Breakdown Card
+                  if (_minFare != null) ...[
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      child: Column(
+                        children: [
+                          _buildBreakdownRow("Your Base Share", "₹${chosenPrice.toStringAsFixed(0)}"),
+                          const SizedBox(height: 8),
+                          _buildBreakdownRow("Platform Fee (Admin)", "₹${platformFee.toStringAsFixed(2)}"),
+                          const SizedBox(height: 8),
+                          _buildBreakdownRow("GST on Platform Fee (${_gstPercent.toStringAsFixed(0)}%)", "₹${gst.toStringAsFixed(2)}"),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 8.0),
+                            child: Divider(height: 1),
+                          ),
+                          _buildBreakdownRow(
+                            "Final Passenger Price per Seat",
+                            "₹${totalPrice.toStringAsFixed(2)}",
+                            isTotal: true,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                  ],
+                  Row(
+                    children: [
+                      Checkbox(
+                        value: _agreeToCostSharing,
+                        onChanged: (val) {
+                          setState(() {
+                            _agreeToCostSharing = val ?? false;
+                          });
+                        },
+                        activeColor: AppColors.primaryPurple,
+                      ),
+                      const Expanded(
+                        child: Text(
+                          "This ride is to reduce Travel Cost but not a commercial ride",
+                          style: TextStyle(fontSize: 14, color: AppColors.textDark, fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
-          const SizedBox(height: 20),
-          if (_loadingFare)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 10),
-              child: SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primaryPurple),
-              ),
-            )
-          else if (_minFare != null && _maxFare != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              child: Text(
-                "Recommended Fare Range: ₹${_minFare!.toStringAsFixed(0)} - ₹${_maxFare!.toStringAsFixed(0)}",
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.primaryPurple),
-              ),
-            ),
-          const SizedBox(height: 20),
-          TextField(
-            controller: _priceController,
-            keyboardType: TextInputType.number,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 48, fontWeight: FontWeight.bold, color: AppColors.primaryPurple),
-            decoration: const InputDecoration(
-              prefixText: "₹ ",
-              border: InputBorder.none,
-            ),
-          ),
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              Checkbox(
-                value: _agreeToCostSharing,
-                onChanged: (val) {
-                  setState(() {
-                    _agreeToCostSharing = val ?? false;
-                  });
-                },
-                activeColor: AppColors.primaryPurple,
-              ),
-              const Expanded(
-                child: Text(
-                  "This ride is to reduce Travel Cost but not a commercial ride",
-                  style: TextStyle(fontSize: 14, color: AppColors.textDark, fontWeight: FontWeight.w500),
-                ),
-              ),
-            ],
-          ),
-          const Spacer(),
+          const SizedBox(height: 12),
           _buildNextButton(label: "Publish Ride"),
         ],
       ),
+    );
+  }
+
+  Widget _buildBreakdownRow(String label, String value, {bool isTotal = false}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: isTotal ? 16 : 14,
+            fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+            color: isTotal ? AppColors.textDark : Colors.grey.shade700,
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: isTotal ? 16 : 14,
+            fontWeight: isTotal ? FontWeight.bold : FontWeight.w600,
+            color: isTotal ? AppColors.primaryPurple : AppColors.textDark,
+          ),
+        ),
+      ],
     );
   }
 
