@@ -877,6 +877,7 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
           refundPercent: refundPercent,
           refundAmount: refundAmount,
           totalPaid: totalPaid,
+          rules: rules,
         );
       }
     } catch (e) {
@@ -897,6 +898,7 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
     required double refundPercent,
     required double refundAmount,
     required double totalPaid,
+    required List<dynamic> rules,
   }) {
     final reasonController = TextEditingController();
 
@@ -914,11 +916,55 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (rules.isNotEmpty) ...[
+                  const Text(
+                    'Cancellation Refund Policy:',
+                    style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textDark, fontSize: 14),
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: rules.map<Widget>((rule) {
+                        final hours = rule['hoursBefore'] ?? 0;
+                        final pct = rule['refundPercent'] ?? 0;
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                '≥ $hours hour${hours != 1 ? 's' : ''} before start',
+                                style: const TextStyle(fontSize: 12, color: AppColors.textDark, fontWeight: FontWeight.w500),
+                              ),
+                              Text(
+                                '$pct% refund',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                  color: pct > 0 ? Colors.green.shade700 : Colors.red,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 const Text(
-                  'Cancellation Policy Summary:',
+                  'Cancellation Refund Calculation:',
                   style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textDark, fontSize: 14),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 8),
                 Text(
                   hoursRemaining <= 0
                       ? '• Time remaining: Ride departed.'
