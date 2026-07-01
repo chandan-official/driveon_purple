@@ -240,13 +240,17 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
         final displayTime = ride['startTime'] ?? ride['time'] ?? _fmtTime(departure);
         final availableSeatsRaw = ride['availableSeats'] ?? ride['seats'] ?? 1;
         final availableSeats = availableSeatsRaw is num ? availableSeatsRaw.toInt() : 1;
+        final bool isSoldOut = availableSeats <= 0;
 
         final fareRaw = ride['fare'] ?? ride['pricing']?['pricePerSeat'] ?? 0;
         final fare = (fareRaw is num) ? fareRaw.toDouble() : double.tryParse('$fareRaw') ?? 0;
 
-        final safeMaxSeats = availableSeats <= 0 ? 1 : availableSeats;
+        final safeMaxSeats = isSoldOut ? 1 : availableSeats;
         if (_selectedSeats > safeMaxSeats) {
           _selectedSeats = safeMaxSeats;
+        }
+        if (isSoldOut && _selectedSeats != 0) {
+          _selectedSeats = 0;
         }
 
         final config = _fareConfig ?? {
@@ -469,101 +473,127 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
                         ),
                       ] else ...[
                         const SizedBox(height: 20),
-                        Container(
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            color: AppColors.backgroundLight,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text('Select Seats', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                              const SizedBox(height: 12),
-                              Wrap(
-                                spacing: 12,
-                                children: List.generate(safeMaxSeats, (index) {
-                                  final seat = index + 1;
-                                  final selected = seat == _selectedSeats;
-                                  return ChoiceChip(
-                                    label: Text('$seat'),
-                                    selected: selected,
-                                    onSelected: (_) => setState(() => _selectedSeats = seat),
-                                  );
-                                }),
-                              ),
-                              const SizedBox(height: 14),
-
-                              // Dynamic Price Breakdown
-                              (() {
-                                final config = _fareConfig ?? {
-                                  'platformFee': 0.0,
-                                  'gstPercent': 5.0,
-                                };
-                                final double platformFee = (config['platformFee'] as num?)?.toDouble() ?? 0.0;
-                                final double gstPercent = (config['gstPercent'] as num?)?.toDouble() ?? 0.0;
-
-                                final double gst = platformFee * (gstPercent / 100.0);
-                                final double baseShare = fare;
-
-                                final double totalBase = baseShare * _selectedSeats;
-                                final double totalPlatform = platformFee * _selectedSeats;
-                                final double totalGst = gst * _selectedSeats;
-
-                                return Column(
+                        isSoldOut
+                            ? Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(20),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.shade50,
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(color: Colors.red.shade200),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.error_outline, color: Colors.red.shade700, size: 24),
+                                    const SizedBox(width: 12),
+                                    const Expanded(
+                                      child: Text(
+                                        "Fully Booked / No Seats Available",
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16,
+                                          color: Colors.red,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : Container(
+                                padding: const EdgeInsets.all(20),
+                                decoration: BoxDecoration(
+                                  color: AppColors.backgroundLight,
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
+                                    const Text('Select Seats', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                    const SizedBox(height: 12),
+                                    Wrap(
+                                      spacing: 12,
+                                      children: List.generate(safeMaxSeats, (index) {
+                                        final seat = index + 1;
+                                        final selected = seat == _selectedSeats;
+                                        return ChoiceChip(
+                                          label: Text('$seat'),
+                                          selected: selected,
+                                          onSelected: (_) => setState(() => _selectedSeats = seat),
+                                        );
+                                      }),
+                                    ),
+                                    const SizedBox(height: 14),
+
+                                    // Dynamic Price Breakdown
+                                    (() {
+                                      final config = _fareConfig ?? {
+                                        'platformFee': 0.0,
+                                        'gstPercent': 5.0,
+                                      };
+                                      final double platformFee = (config['platformFee'] as num?)?.toDouble() ?? 0.0;
+                                      final double gstPercent = (config['gstPercent'] as num?)?.toDouble() ?? 0.0;
+
+                                      final double gst = platformFee * (gstPercent / 100.0);
+                                      final double baseShare = fare;
+
+                                      final double totalBase = baseShare * _selectedSeats;
+                                      final double totalPlatform = platformFee * _selectedSeats;
+                                      final double totalGst = gst * _selectedSeats;
+
+                                      return Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          const Divider(height: 24),
+                                          const Text(
+                                            'Price Breakdown',
+                                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.textDark),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Text('Driver Share (${_selectedSeats} seat${_selectedSeats > 1 ? 's' : ''})', style: const TextStyle(color: Colors.black54, fontSize: 13)),
+                                              Text('₹${totalBase.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.textDark, fontSize: 13, fontWeight: FontWeight.w500)),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              const Text('Platform Fee (Flat)', style: TextStyle(color: Colors.black54, fontSize: 13)),
+                                              Text('₹${totalPlatform.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.textDark, fontSize: 13, fontWeight: FontWeight.w500)),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Text('GST on Platform Fee (${gstPercent.toStringAsFixed(0)}%)', style: const TextStyle(color: Colors.black54, fontSize: 13)),
+                                              Text('₹${totalGst.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.textDark, fontSize: 13, fontWeight: FontWeight.w500)),
+                                            ],
+                                          ),
+                                        ],
+                                      );
+                                    })(),
+
                                     const Divider(height: 24),
-                                    const Text(
-                                      'Price Breakdown',
-                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.textDark),
-                                    ),
-                                    const SizedBox(height: 8),
                                     Row(
                                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                       children: [
-                                        Text('Driver Share (${_selectedSeats} seat${_selectedSeats > 1 ? 's' : ''})', style: const TextStyle(color: Colors.black54, fontSize: 13)),
-                                        Text('₹${totalBase.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.textDark, fontSize: 13, fontWeight: FontWeight.w500)),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        const Text('Platform Fee (Flat)', style: TextStyle(color: Colors.black54, fontSize: 13)),
-                                        Text('₹${totalPlatform.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.textDark, fontSize: 13, fontWeight: FontWeight.w500)),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text('GST on Platform Fee (${gstPercent.toStringAsFixed(0)}%)', style: const TextStyle(color: Colors.black54, fontSize: 13)),
-                                        Text('₹${totalGst.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.textDark, fontSize: 13, fontWeight: FontWeight.w500)),
+                                        const Text('Grand Total', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                                        Text(
+                                          '₹${totalPrice.toStringAsFixed(2)}',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 24,
+                                            color: AppColors.primaryPurple,
+                                          ),
+                                        ),
                                       ],
                                     ),
                                   ],
-                                );
-                              })(),
-
-                              const Divider(height: 24),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text('Grand Total', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                                  Text(
-                                    '₹${totalPrice.toStringAsFixed(2)}',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 24,
-                                      color: AppColors.primaryPurple,
-                                    ),
-                                  ),
-                                ],
+                                ),
                               ),
-                            ],
-                          ),
-                        ),
                       ],
                       const SizedBox(height: 100),
                     ],
@@ -652,35 +682,37 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Row(
-                    children: [
-                      Checkbox(
-                        value: _agreeToPassengerSharing,
-                        onChanged: (val) {
-                          setState(() {
-                            _agreeToPassengerSharing = val ?? false;
-                          });
-                        },
-                        activeColor: AppColors.primaryPurple,
-                      ),
-                      const Expanded(
-                        child: Text(
-                          "This is a ride sharing but not a taxi service.",
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: AppColors.textDark,
-                            fontWeight: FontWeight.w500,
+                  if (!isSoldOut) ...[
+                    Row(
+                      children: [
+                        Checkbox(
+                          value: _agreeToPassengerSharing,
+                          onChanged: (val) {
+                            setState(() {
+                              _agreeToPassengerSharing = val ?? false;
+                            });
+                          },
+                          activeColor: AppColors.primaryPurple,
+                        ),
+                        const Expanded(
+                          child: Text(
+                            "This is a ride sharing but not a taxi service.",
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: AppColors.textDark,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                  ],
                   SizedBox(
                     width: double.infinity,
                     height: 56,
                     child: ElevatedButton(
-                      onPressed: !_agreeToPassengerSharing
+                      onPressed: isSoldOut || !_agreeToPassengerSharing
                           ? null
                           : () {
                               Navigator.pushNamed(
@@ -695,12 +727,14 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
                               );
                             },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: !_agreeToPassengerSharing ? Colors.grey : AppColors.primaryPurple,
+                        backgroundColor: isSoldOut
+                            ? Colors.grey.shade400
+                            : (!_agreeToPassengerSharing ? Colors.grey : AppColors.primaryPurple),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                       ),
-                      child: const Text(
-                        'Proceed to Pay',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                      child: Text(
+                        isSoldOut ? 'Fully Booked' : 'Proceed to Pay',
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
                       ),
                     ),
                   ),
