@@ -28,118 +28,125 @@ class BookingSuccessScreen extends StatelessWidget {
         ? 'Pay on Boarding (Cash)' 
         : 'Paid Online (UPI/Card)';
 
-    return Scaffold(
-      backgroundColor: AppColors.backgroundLight,
-      body: Stack(
-        children: [
-          // Background Gradient Overlay
-          Positioned.fill(
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.green.withOpacity(0.05),
-                    AppColors.backgroundLight,
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) {
+        if (didPop) return;
+        Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.backgroundLight,
+        body: Stack(
+          children: [
+            // Background Gradient Overlay
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.green.withOpacity(0.05),
+                      AppColors.backgroundLight,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+  
+            SafeArea(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 40.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const SizedBox(height: 20),
+                    
+                    // 1. Success Animation / Icon
+                    _buildSuccessAnimation(),
+  
+                    const SizedBox(height: 24),
+  
+                    // 2. Title & Subtitle
+                    Text(
+                      "Booking Confirmed!",
+                      style: GoogleFonts.inter(
+                        fontSize: 26,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textDark,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      "Your trip has been booked successfully.\nWe've notified the driver of your request.",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: AppColors.textGrey,
+                        fontSize: 14,
+                        height: 1.4,
+                      ),
+                    ),
+  
+                    const SizedBox(height: 32),
+  
+                    // 3. Ticket Summary Card
+                    _buildTicketSummary(
+                      from: from,
+                      to: to,
+                      date: travelDate,
+                      time: startTime,
+                      seats: seatsBooked,
+                      amount: amount,
+                      paymentMethod: paymentMethodText,
+                    ),
+  
+                    const SizedBox(height: 32),
+  
+                    // 4. Primary Actions
+                    SizedBox(
+                      width: double.infinity,
+                      height: 54,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.pushReplacementNamed(
+                            context, 
+                            '/track_ride',
+                            arguments: args, // Pass along the ride/booking info
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primaryPurple,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          elevation: 4,
+                          shadowColor: AppColors.primaryPurple.withOpacity(0.4),
+                        ),
+                        child: const Text(
+                          "Track My Ride",
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
+                      ),
+                    ),
+  
+                    const SizedBox(height: 16),
+  
+                    TextButton(
+                      onPressed: () => Navigator.pushNamedAndRemoveUntil(context, '/home', (r) => false),
+                      child: Text(
+                        "Back to Home",
+                        style: GoogleFonts.inter(
+                          color: AppColors.primaryPurple,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
             ),
-          ),
-
-          SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 40.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const SizedBox(height: 20),
-                  
-                  // 1. Success Animation / Icon
-                  _buildSuccessAnimation(),
-
-                  const SizedBox(height: 24),
-
-                  // 2. Title & Subtitle
-                  Text(
-                    "Booking Confirmed!",
-                    style: GoogleFonts.inter(
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textDark,
-                      letterSpacing: -0.5,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    "Your trip has been booked successfully.\nWe've notified the driver of your request.",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: AppColors.textGrey,
-                      fontSize: 14,
-                      height: 1.4,
-                    ),
-                  ),
-
-                  const SizedBox(height: 32),
-
-                  // 3. Ticket Summary Card
-                  _buildTicketSummary(
-                    from: from,
-                    to: to,
-                    date: travelDate,
-                    time: startTime,
-                    seats: seatsBooked,
-                    amount: amount,
-                    paymentMethod: paymentMethodText,
-                  ),
-
-                  const SizedBox(height: 32),
-
-                  // 4. Primary Actions
-                  SizedBox(
-                    width: double.infinity,
-                    height: 54,
-                    child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.pushReplacementNamed(
-                          context, 
-                          '/track_ride',
-                          arguments: args, // Pass along the ride/booking info
-                        );
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primaryPurple,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        elevation: 4,
-                        shadowColor: AppColors.primaryPurple.withOpacity(0.4),
-                      ),
-                      child: const Text(
-                        "Track My Ride",
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  TextButton(
-                    onPressed: () => Navigator.pushNamedAndRemoveUntil(context, '/home', (r) => false),
-                    child: Text(
-                      "Back to Home",
-                      style: GoogleFonts.inter(
-                        color: AppColors.primaryPurple,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 15,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

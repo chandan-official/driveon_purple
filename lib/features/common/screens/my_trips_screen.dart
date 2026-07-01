@@ -26,6 +26,13 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
     _completedFuture = _fetchTrips(validStatuses: ['COMPLETED']);
   }
 
+  Future<void> _refreshTrips() async {
+    setState(() {
+      _upcomingFuture = _fetchTrips(validStatuses: ['PENDING', 'CONFIRMED', 'ONGOING']);
+      _completedFuture = _fetchTrips(validStatuses: ['COMPLETED']);
+    });
+  }
+
   Future<List<Map<String, dynamic>>> _fetchTrips({required List<String> validStatuses}) async {
     await _api.loadToken();
     // Fetch all bookings without passing a specific status to the backend
@@ -81,13 +88,19 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
         }
 
         if (snapshot.hasError) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Text(
-                'Failed to load trips: ${snapshot.error}',
-                style: const TextStyle(color: Colors.red),
-                textAlign: TextAlign.center,
+          return RefreshIndicator(
+            onRefresh: _refreshTrips,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: Container(
+                height: MediaQuery.of(context).size.height - 200,
+                alignment: Alignment.center,
+                padding: const EdgeInsets.all(20),
+                child: Text(
+                  'Failed to load trips: ${snapshot.error}',
+                  style: const TextStyle(color: Colors.red),
+                  textAlign: TextAlign.center,
+                ),
               ),
             ),
           );
@@ -95,54 +108,66 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
 
         final trips = snapshot.data ?? const [];
         if (trips.isEmpty) {
-          return Center(
-            child: Text(
-              completed ? 'No completed trips yet.' : 'No upcoming trips found.',
-              style: const TextStyle(color: AppColors.textGrey),
+          return RefreshIndicator(
+            onRefresh: _refreshTrips,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: Container(
+                height: MediaQuery.of(context).size.height - 200,
+                alignment: Alignment.center,
+                child: Text(
+                  completed ? 'No completed trips yet.' : 'No upcoming trips found.',
+                  style: const TextStyle(color: AppColors.textGrey),
+                ),
+              ),
             ),
           );
         }
 
-        return ListView.builder(
-          padding: const EdgeInsets.all(20),
-          itemCount: trips.length,
-          itemBuilder: (context, index) {
-            final trip = trips[index];
-            final ride = (trip['rideDetails'] is Map)
-                ? (trip['rideDetails'] as Map).cast<String, dynamic>()
-                : (trip['rideId'] is Map)
-                    ? (trip['rideId'] as Map).cast<String, dynamic>()
-                    : <String, dynamic>{};
+        return RefreshIndicator(
+          onRefresh: _refreshTrips,
+          child: ListView.builder(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(20),
+            itemCount: trips.length,
+            itemBuilder: (context, index) {
+              final trip = trips[index];
+              final ride = (trip['rideDetails'] is Map)
+                  ? (trip['rideDetails'] as Map).cast<String, dynamic>()
+                  : (trip['rideId'] is Map)
+                      ? (trip['rideId'] as Map).cast<String, dynamic>()
+                      : <String, dynamic>{};
 
-            final Object rawFare = trip['totalAmount'] ?? trip['totalFare'] ?? (trip['fareBreakdown'] is Map ? trip['fareBreakdown']['subtotal'] : null) ?? 0;
-            final double fare = rawFare is num ? rawFare.toDouble() : double.tryParse(rawFare.toString()) ?? 0.0;
-            final seats = trip['seatsBooked'] ?? 1;
-            
-            final route = ride['route'] is Map ? ride['route'] : {};
-            final from = (route['startCity'] ?? ride['from'] ?? 'Trip').toString();
-            final to = (route['endCity'] ?? ride['to'] ?? '').toString();
-            final time = (ride['startTime'] ?? _formatTime(ride['departureTime'] ?? trip['createdAt'])).toString();
-            final routeName = to.isEmpty ? from : '$from -> $to';
+              final Object rawFare = trip['totalAmount'] ?? trip['totalFare'] ?? (trip['fareBreakdown'] is Map ? trip['fareBreakdown']['subtotal'] : null) ?? 0;
+              final double fare = rawFare is num ? rawFare.toDouble() : double.tryParse(rawFare.toString()) ?? 0.0;
+              final seats = trip['seatsBooked'] ?? 1;
+              
+              final route = ride['route'] is Map ? ride['route'] : {};
+              final from = (route['startCity'] ?? ride['from'] ?? 'Trip').toString();
+              final to = (route['endCity'] ?? ride['to'] ?? '').toString();
+              final time = (ride['startTime'] ?? _formatTime(ride['departureTime'] ?? trip['createdAt'])).toString();
+              final routeName = to.isEmpty ? from : '$from -> $to';
 
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (index == 0) _buildSectionHeader(completed ? 'Completed' : 'Upcoming'),
-                RideCard(
-                  name: routeName,
-                  time: time,
-                  price: '$fare',
-                  seats: '$seats',
-                  rating: 4.7,
-                  isVerified: true,
-                  onTap: () => Navigator.pushNamed(context, '/ride_detail', arguments: {
-                    'ride': ride,
-                    'booking': trip,
-                  }),
-                ),
-              ],
-            );
-          },
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (index == 0) _buildSectionHeader(completed ? 'Completed' : 'Upcoming'),
+                  RideCard(
+                    name: routeName,
+                    time: time,
+                    price: '$fare',
+                    seats: '$seats',
+                    rating: 4.7,
+                    isVerified: true,
+                    onTap: () => Navigator.pushNamed(context, '/ride_detail', arguments: {
+                      'ride': ride,
+                      'booking': trip,
+                    }),
+                  ),
+                ],
+              );
+            },
+          ),
         );
       },
     );
