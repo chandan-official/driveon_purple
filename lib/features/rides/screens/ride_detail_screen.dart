@@ -429,6 +429,93 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
                               const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider()),
                               _buildDetailRow(Icons.payments_outlined, 'Total Paid', '₹${(_booking!['totalAmount'] ?? _booking!['totalFare'] ?? (_booking!['fareBreakdown'] is Map ? _booking!['fareBreakdown']['subtotal'] : null) ?? 0)}'),
 
+                              (() {
+                                final String bStatus = (_booking!['status'] ?? '').toString().toUpperCase();
+                                final String payStatus = (_booking!['paymentStatus'] ?? '').toString().toUpperCase();
+                                final double refundedAmt = ((_booking!['refundedAmount'] ?? 0) as num).toDouble();
+                                final bool isCancelledOrRefunded = bStatus == 'CANCELLED' || bStatus == 'REFUNDED' || refundedAmt > 0;
+
+                                if (isCancelledOrRefunded) {
+                                  return Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider()),
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.all(16),
+                                        decoration: BoxDecoration(
+                                          color: Colors.red.shade50,
+                                          borderRadius: BorderRadius.circular(16),
+                                          border: Border.all(color: Colors.red.shade200),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                Icon(Icons.monetization_on_outlined, color: Colors.red.shade700, size: 20),
+                                                const SizedBox(width: 8),
+                                                Text(
+                                                  'Refund Details',
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 14,
+                                                    color: Colors.red.shade800,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 12),
+                                            Row(
+                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                              children: [
+                                                const Text('Eligible Refund', style: TextStyle(fontSize: 13, color: AppColors.textGrey)),
+                                                Text('₹${refundedAmt.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.textDark)),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Row(
+                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                              children: [
+                                                const Text('Refund Status', style: TextStyle(fontSize: 13, color: AppColors.textGrey)),
+                                                (() {
+                                                  if (payStatus == 'REFUNDED' || bStatus == 'REFUNDED') {
+                                                    return Text(
+                                                      'Settled (Paid)',
+                                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green.shade700),
+                                                    );
+                                                  } else if (payStatus == 'FAILED') {
+                                                    return Text(
+                                                      'Refund Failed (Processing Manually)',
+                                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.red.shade700),
+                                                    );
+                                                  } else {
+                                                    return Text(
+                                                      'Pending Settlement',
+                                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.amber.shade800),
+                                                    );
+                                                  }
+                                                })(),
+                                              ],
+                                            ),
+                                            if (_booking!['cancellationReason'] != null && _booking!['cancellationReason'].toString().isNotEmpty) ...[
+                                              const SizedBox(height: 12),
+                                              const Text('Cancellation Info', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppColors.textGrey)),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                _booking!['cancellationReason'].toString(),
+                                                style: const TextStyle(fontSize: 12, color: AppColors.textDark),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                }
+                                return const SizedBox.shrink();
+                              })(),
+
                               // RATING SECTION — only show if COMPLETED and not yet rated
                               if ((_booking!['status'] ?? '') == 'COMPLETED') ...[
                                 const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider()),
