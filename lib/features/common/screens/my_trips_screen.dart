@@ -23,13 +23,13 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
     super.initState();
     // A newly booked ride is typically PENDING. An accepted one is CONFIRMED.
     _upcomingFuture = _fetchTrips(validStatuses: ['PENDING', 'CONFIRMED', 'ONGOING']);
-    _completedFuture = _fetchTrips(validStatuses: ['COMPLETED']);
+    _completedFuture = _fetchTrips(validStatuses: ['COMPLETED', 'CANCELLED', 'REFUNDED']);
   }
 
   Future<void> _refreshTrips() async {
     setState(() {
       _upcomingFuture = _fetchTrips(validStatuses: ['PENDING', 'CONFIRMED', 'ONGOING']);
-      _completedFuture = _fetchTrips(validStatuses: ['COMPLETED']);
+      _completedFuture = _fetchTrips(validStatuses: ['COMPLETED', 'CANCELLED', 'REFUNDED']);
     });
   }
 
@@ -116,7 +116,7 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
                 height: MediaQuery.of(context).size.height - 200,
                 alignment: Alignment.center,
                 child: Text(
-                  completed ? 'No completed trips yet.' : 'No upcoming trips found.',
+                  completed ? 'No activity history found.' : 'No upcoming trips found.',
                   style: const TextStyle(color: AppColors.textGrey),
                 ),
               ),
@@ -151,7 +151,7 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (index == 0) _buildSectionHeader(completed ? 'Completed' : 'Upcoming'),
+                  if (index == 0) _buildSectionHeader(completed ? 'History' : 'Upcoming'),
                   RideCard(
                     name: routeName,
                     time: time,
@@ -195,7 +195,7 @@ class _MyTripsScreenState extends State<MyTripsScreen> {
             labelStyle: TextStyle(fontWeight: FontWeight.bold),
             tabs: [
               Tab(text: 'Upcoming'),
-              Tab(text: 'Completed'),
+              Tab(text: 'History'),
             ],
           ),
         ),
