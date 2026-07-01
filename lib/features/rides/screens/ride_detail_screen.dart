@@ -479,7 +479,12 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
                                               children: [
                                                 const Text('Refund Status', style: TextStyle(fontSize: 13, color: AppColors.textGrey)),
                                                 (() {
-                                                  if (payStatus == 'REFUNDED' || bStatus == 'REFUNDED') {
+                                                  if (refundedAmt == 0 && payStatus == 'FAILED') {
+                                                    return Text(
+                                                      'Refund Rejected',
+                                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.red.shade700),
+                                                    );
+                                                  } else if (payStatus == 'REFUNDED' || bStatus == 'REFUNDED') {
                                                     return Text(
                                                       'Settled (Paid)',
                                                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green.shade700),
@@ -502,10 +507,28 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
                                               const SizedBox(height: 12),
                                               const Text('Cancellation Info', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppColors.textGrey)),
                                               const SizedBox(height: 4),
-                                              Text(
-                                                _booking!['cancellationReason'].toString(),
-                                                style: const TextStyle(fontSize: 12, color: AppColors.textDark),
-                                              ),
+                                              (() {
+                                                final reasonText = _booking!['cancellationReason'].toString();
+                                                if (reasonText.contains('Refund Rejected')) {
+                                                  final parts = reasonText.split('Refund Rejected');
+                                                  return RichText(
+                                                    text: TextSpan(
+                                                      style: const TextStyle(fontSize: 12, color: AppColors.textDark),
+                                                      children: [
+                                                        TextSpan(text: parts[0]),
+                                                        TextSpan(
+                                                          text: '\nRefund Rejected' + (parts.length > 1 ? parts[1] : ''),
+                                                          style: TextStyle(color: Colors.red.shade800, fontWeight: FontWeight.bold),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  );
+                                                }
+                                                return Text(
+                                                  reasonText,
+                                                  style: const TextStyle(fontSize: 12, color: AppColors.textDark),
+                                                );
+                                              })(),
                                             ],
                                           ],
                                         ),
