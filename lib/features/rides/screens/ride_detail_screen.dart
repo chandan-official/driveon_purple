@@ -644,22 +644,61 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
                           onPressed: null,
                         );
                       } else {
-                        return ElevatedButton(
-                          onPressed: () {
-                            Navigator.pushNamed(
-                              context,
-                              '/track_ride',
-                              arguments: {
-                                'ride': ride,
-                                'booking': _booking,
-                              },
-                            );
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primaryPurple,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                          ),
-                          child: const Text('Track Trip', style: TextStyle(fontSize: 18, color: Colors.white, fontWeight: FontWeight.bold)),
+                        final isCancelled = bStatus == 'CANCELLED' || bStatus == 'REFUNDED';
+                        if (isCancelled) {
+                          return ElevatedButton(
+                            onPressed: null,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.grey.shade400,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            ),
+                            child: const Text('Ride Cancelled', style: TextStyle(fontSize: 18, color: Colors.white)),
+                          );
+                        }
+
+                        return Row(
+                          children: [
+                            Expanded(
+                              flex: 4,
+                              child: OutlinedButton(
+                                onPressed: () => _handleCancellation(context, ride, _booking!),
+                                style: OutlinedButton.styleFrom(
+                                  side: const BorderSide(color: Colors.red, width: 2),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                                ),
+                                child: const Text(
+                                  'Cancel',
+                                  style: TextStyle(fontSize: 16, color: Colors.red, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              flex: 6,
+                              child: ElevatedButton(
+                                onPressed: () {
+                                  Navigator.pushNamed(
+                                    context,
+                                    '/track_ride',
+                                    arguments: {
+                                      'ride': ride,
+                                      'booking': _booking,
+                                    },
+                                  );
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.primaryPurple,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                                ),
+                                child: const Text(
+                                  'Track Trip',
+                                  style: TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ),
+                          ],
                         );
                       }
                     })(),
@@ -742,6 +781,240 @@ class _RideDetailScreenState extends State<RideDetailScreen> {
               ),
             ),
           ),
+        );
+      },
+    );
+  }
+
+  DateTime _getDepartureDateTime(String travelDateStr, String startTimeStr) {
+    try {
+      DateTime dt = DateTime.parse(travelDateStr);
+      int hours = 0;
+      int minutes = 0;
+      final timeClean = startTimeStr.trim().toUpperCase();
+      if (timeClean.contains('AM') || timeClean.contains('PM')) {
+        final ampmMatch = RegExp(r'^(\d+):(\d+)\s*(AM|PM)$').firstMatch(timeClean);
+        if (ampmMatch != null) {
+          hours = int.parse(ampmMatch.group(1)!);
+          minutes = int.parse(ampmMatch.group(2)!);
+          final ampm = ampmMatch.group(3)!;
+          if (ampm == 'PM' && hours < 12) {
+            hours += 12;
+          } else if (ampm == 'AM' && hours == 12) {
+            hours = 0;
+          }
+        }
+      } else {
+        final parts = timeClean.split(':');
+        if (parts.length >= 2) {
+          hours = int.parse(parts[0]);
+          minutes = int.parse(parts[1]);
+        }
+      }
+      return DateTime(dt.year, dt.month, dt.day, hours, minutes);
+    } catch (e) {
+      return DateTime.now();
+    }
+  }
+
+  Future<void> _handleCancellation(
+    BuildContext context,
+    Map<String, dynamic> ride,
+    Map<String, dynamic> booking,
+  ) async {
+    // Show a loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      // 1. Fetch cancellation rules from backend
+      final rulesRes = await _api.getCancellationRules();
+      List<dynamic> rules = [];
+      if (rulesRes is Map && rulesRes['data'] is List) {
+        rules = rulesRes['data'];
+      }
+
+      // Dismiss loading indicator
+      if (context.mounted) Navigator.pop(context);
+
+      // 2. Parse departure time and check hours remaining
+      final String travelDate = (ride['travelDate'] ?? '').toString();
+      final String startTime = (ride['startTime'] ?? ride['time'] ?? '12:00 AM').toString();
+      final departureDateTime = _getDepartureDateTime(travelDate, startTime);
+      final hoursRemaining = departureDateTime.difference(DateTime.now()).inMinutes / 60.0;
+
+      double refundPercent = 100;
+      if (hoursRemaining <= 0) {
+        refundPercent = 0;
+      } else if (rules.isNotEmpty) {
+        // Find matching rule
+        dynamic matchedRule;
+        for (var rule in rules) {
+          final threshold = (rule['hoursBefore'] as num).toDouble();
+          if (hoursRemaining >= threshold) {
+            matchedRule = rule;
+            break;
+          }
+        }
+        refundPercent = matchedRule != null 
+            ? (matchedRule['refundPercent'] as num).toDouble() 
+            : 0.0;
+      }
+
+      final double totalPaid = (booking['totalAmount'] ?? booking['amount'] ?? 0.0).toDouble();
+      final double refundAmount = totalPaid * (refundPercent / 100.0);
+
+      // 3. Show dynamic cancellation modal
+      if (context.mounted) {
+        _showCancellationDialog(
+          context: context,
+          bookingId: booking['_id']?.toString() ?? booking['id']?.toString() ?? '',
+          hoursRemaining: hoursRemaining,
+          refundPercent: refundPercent,
+          refundAmount: refundAmount,
+          totalPaid: totalPaid,
+        );
+      }
+    } catch (e) {
+      // Dismiss loading indicator if still open
+      if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to calculate cancellation policy: $e')),
+        );
+      }
+    }
+  }
+
+  void _showCancellationDialog({
+    required BuildContext context,
+    required String bookingId,
+    required double hoursRemaining,
+    required double refundPercent,
+    required double refundAmount,
+    required double totalPaid,
+  }) {
+    final reasonController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text(
+            'Confirm Cancellation',
+            style: GoogleFonts.inter(fontWeight: FontWeight.bold, fontSize: 18),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Cancellation Policy Summary:',
+                  style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textDark, fontSize: 14),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  hoursRemaining <= 0
+                      ? '• Time remaining: Ride departed.'
+                      : '• Time remaining: ${hoursRemaining.toStringAsFixed(1)} hours before departure.',
+                  style: const TextStyle(fontSize: 13, color: AppColors.textGrey),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '• Refund eligibility: ${refundPercent.toStringAsFixed(0)}%',
+                  style: const TextStyle(fontSize: 13, color: AppColors.textGrey),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '• Expected Refund: ₹${refundAmount.toStringAsFixed(2)} (out of ₹${totalPaid.toStringAsFixed(2)})',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: refundAmount > 0 ? Colors.green.shade700 : Colors.red,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                const Text(
+                  'Please provide a reason for cancellation:',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: reasonController,
+                  maxLines: 2,
+                  decoration: InputDecoration(
+                    hintText: 'Reason...',
+                    hintStyle: const TextStyle(color: Colors.grey, fontSize: 13),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Go Back', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: () async {
+                final reason = reasonController.text.trim();
+                if (reason.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Please enter a cancellation reason')),
+                  );
+                  return;
+                }
+
+                // Show loading
+                showDialog(
+                  context: context,
+                  barrierDismissible: false,
+                  builder: (context) => const Center(child: CircularProgressIndicator()),
+                );
+
+                try {
+                  await _api.cancelBooking(bookingId, reason: reason);
+                  // Dismiss loading and dialog
+                  if (context.mounted) {
+                    Navigator.of(context, rootNavigator: true).pop(); // dismiss loading
+                    Navigator.pop(context); // dismiss confirm dialog
+                    
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(refundPercent > 0
+                            ? 'Cancellation successful. Refund of ₹${refundAmount.toStringAsFixed(2)} initiated!'
+                            : 'Booking cancelled successfully.'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+
+                    // Navigate back to home
+                    Navigator.pushNamedAndRemoveUntil(context, '/home', (r) => false);
+                  }
+                } catch (e) {
+                  // Dismiss loading
+                  if (context.mounted) {
+                    Navigator.of(context, rootNavigator: true).pop();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Cancellation failed: $e')),
+                    );
+                  }
+                }
+              },
+              child: const Text('Confirm Cancel', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ],
         );
       },
     );

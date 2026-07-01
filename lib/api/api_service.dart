@@ -404,6 +404,8 @@ class ApiService {
     return _delete('/bookings/$bookingId', body: {'reason': reason});
   }
 
+  Future<dynamic> getCancellationRules() => _get('/bookings/cancellation-rules');
+
   // ------------------ PAYMENTS ------------------
 
   Future<dynamic> createPaymentOrder(String bookingId) =>
